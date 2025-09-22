@@ -1,24 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Omarchy Secure Boot Manager v1.0
+# Omarchy Secure Boot Manager v1.1
 # Complete secure boot automation for Limine + UKI
 # Repository: https://github.com/peregrinus879/omarchy-secure-boot-manager
 
 # Configuration
-readonly UKI_PATHS=("/boot/EFI/Linux" "/boot/EFI/linux")
 readonly LIMINE_CONF="/boot/limine.conf"
 readonly MACHINE_ID_FILE="/etc/machine-id"
 readonly SCRIPT_NAME="omarchy-secure-boot.sh"
 readonly INSTALL_PATH="/usr/local/bin/$SCRIPT_NAME"
 readonly HOOK_PATH="/etc/pacman.d/hooks/99-omarchy-secure-boot.hook"
-
-# Static EFI files that need signing
-readonly -a STATIC_EFI_FILES=(
-  "/boot/EFI/BOOT/BOOTX64.EFI"
-  "/boot/EFI/limine/BOOTX64.EFI"
-  "/boot/EFI/limine/BOOTIA32.EFI"
-)
 
 # Required packages
 readonly -a SB_PACKAGES=(
@@ -68,27 +60,143 @@ get_machine_id() {
   fi
 }
 
-get_uki_base() {
-  local path
-  for path in "${UKI_PATHS[@]}"; do
-    if [[ -d "$path" ]]; then
-      echo "$path"
-      return 0
+# NEW: Find all Linux-related EFI files dynamically
+find_linux_efi_files() {
+  local -a efi_files=()
+  local file
+
+  # Search for all .efi files in /boot, excluding Windows-related ones
+  # Use -type f to ensure we only get regular files, not directories
+  while IFS= read -r file; do
+    # Skip Windows-related files
+    if [[ "$file" =~ [Mm]icrosoft|[Ww]indows|bootmgfw ]]; then
+      continue
     fi
-  done
-  echo "${UKI_PATHS[0]}"
+
+    # Double-check it's a regular file (not directory, symlink, etc.)
+    if [[ -f "$file" ]] && [[ ! -d "$file" ]]; then
+      efi_files+=("$file")
+    fi
+  done < <(find /boot -type f -iname "*.efi" 2>/dev/null || true)
+
+  # Return the array
+  printf '%s\n' "${efi_files[@]}"
 }
 
-get_uki_file() {
-  local machine_id="$1"
-  local uki_base="$2"
-  local uki_file="${uki_base}/${machine_id}_linux.efi"
+# NEW: Find Windows Boot Manager (searches all mounted partitions)
+find_windows_bootmgr() {
+  local bootmgr_path=""
 
-  if [[ ! -f "$uki_file" ]]; then
-    uki_file=$(find "$uki_base" -name "*_linux.efi" 2>/dev/null | head -1)
+  # Search all mounted partitions for Windows Boot Manager
+  log_info "Searching for Windows Boot Manager..."
+
+  # Method 1: Check common mount points
+  local -a search_paths=(
+    "/boot"
+    "/boot/efi"
+    "/efi"
+    "/mnt/c"
+    "/mnt/windows"
+  )
+
+  # Method 2: Find all mounted FAT/NTFS partitions
+  while IFS= read -r mount_point; do
+    if [[ -n "$mount_point" ]] && [[ ! " ${search_paths[@]} " =~ " ${mount_point} " ]]; then
+      search_paths+=("$mount_point")
+    fi
+  done < <(findmnt -t vfat,ntfs,ntfs3 -n -o TARGET 2>/dev/null || true)
+
+  # Search each location for bootmgfw.efi
+  for search_dir in "${search_paths[@]}"; do
+    if [[ -d "$search_dir" ]]; then
+      local found
+      found=$(find "$search_dir" -type f -ipath "*/Microsoft/Boot/bootmgfw.efi" 2>/dev/null | head -1 || true)
+      if [[ -n "$found" ]] && [[ -f "$found" ]]; then
+        bootmgr_path="$found"
+        log_info "Found Windows at: $bootmgr_path"
+        break
+      fi
+    fi
+  done
+
+  # If still not found, check if Windows partition needs mounting
+  if [[ -z "$bootmgr_path" ]]; then
+    # Check if there are unmounted Windows partitions
+    local windows_parts
+    windows_parts=$(lsblk -f -n -o NAME,FSTYPE,LABEL,MOUNTPOINT | grep -E "(ntfs|vfat)" | grep -v "/" | head -1 || true)
+    if [[ -n "$windows_parts" ]]; then
+      log_info "Found unmounted Windows partition(s). Consider mounting them to detect Windows."
+    fi
   fi
 
-  echo "$uki_file"
+  echo "$bootmgr_path"
+}
+
+# NEW: Check and add Windows entry to limine.conf
+ensure_windows_entry() {
+  log_step "Checking for Windows Boot Entry"
+
+  # Check if Windows entry already exists
+  if grep -qi "windows\|bootmgfw" "$LIMINE_CONF" 2>/dev/null; then
+    log_success "Windows entry already exists in limine.conf"
+    return 0
+  fi
+
+  # Find Windows Boot Manager
+  local windows_path
+  windows_path=$(find_windows_bootmgr)
+
+  if [[ -z "$windows_path" ]]; then
+    log_info "No Windows installation detected"
+    return 0
+  fi
+
+  log_info "Found Windows Boot Manager at: $windows_path"
+
+  # Convert absolute path to relative EFI path
+  local efi_path
+  if [[ "$windows_path" =~ /boot/(.*) ]]; then
+    efi_path="${BASH_REMATCH[1]}"
+  elif [[ "$windows_path" =~ /efi/(.*) ]]; then
+    efi_path="${BASH_REMATCH[1]}"
+  else
+    efi_path="$windows_path"
+  fi
+
+  # Determine if it's on the same partition or different
+  local protocol="boot()"
+  if [[ "$windows_path" =~ ^/efi/ ]]; then
+    # Different partition mounting
+    protocol="boot()"
+  fi
+
+  # Create Windows entry
+  local windows_entry="
+# Windows Boot Manager
+/Windows
+    comment: Microsoft Windows 11
+    comment: order-priority=20
+    protocol: efi_chainload
+    image_path: ${protocol}:/${efi_path}"
+
+  # Ask for confirmation before adding
+  echo ""
+  echo "The following entry will be added to limine.conf:"
+  echo -e "${CYAN}$windows_entry${NC}"
+  echo ""
+  read -p "Add Windows entry to boot menu? (y/N): " add_windows
+
+  if [[ $add_windows =~ ^[Yy]$ ]]; then
+    # Backup limine.conf
+    sudo cp "$LIMINE_CONF" "${LIMINE_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
+
+    # Add entry to limine.conf
+    echo "$windows_entry" | sudo tee -a "$LIMINE_CONF" >/dev/null
+    log_success "Windows entry added to limine.conf"
+    log_info "Backup saved to ${LIMINE_CONF}.backup.*"
+  else
+    log_info "Skipped adding Windows entry"
+  fi
 }
 
 check_packages() {
@@ -107,7 +215,15 @@ check_packages() {
 }
 
 check_keys() {
-  [[ -f /usr/share/secureboot/keys/db/db.key ]]
+  # Check multiple possible key locations
+  if [[ -f /usr/share/secureboot/keys/db/db.key ]] ||
+    [[ -f /var/lib/sbctl/keys/db/db.key ]] ||
+    [[ -d /var/lib/sbctl/keys ]] ||
+    sbctl status 2>/dev/null | grep -q "Installed:"; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Setup functions
@@ -239,48 +355,56 @@ ENROLL_EOF
   echo ""
 }
 
-# Update functions (core maintenance)
+# ENHANCED: Sign only actual EFI files (not directories)
 sign_files() {
-  local machine_id uki_base uki_file
+  local machine_id
   machine_id=$(get_machine_id)
-  uki_base=$(get_uki_base)
-  uki_file=$(get_uki_file "$machine_id" "$uki_base")
 
-  # Build file list
-  local -a efi_files=()
-  for file in "${STATIC_EFI_FILES[@]}"; do
-    efi_files+=("$file")
-  done
+  # Get all Linux-related EFI files dynamically
+  local -a efi_files
+  mapfile -t efi_files < <(find_linux_efi_files)
 
-  if [[ -n "$uki_file" ]]; then
-    efi_files+=("$uki_file")
+  if [[ ${#efi_files[@]} -eq 0 ]]; then
+    log_warning "No Linux EFI files found to sign"
+    return 1
   fi
+
+  log_info "Found ${#efi_files[@]} Linux EFI files to process"
 
   # Sign files that need signing
   local needs_signing=false
   for file in "${efi_files[@]}"; do
-    if [[ -f "$file" ]]; then
-      log_info "Checking $(basename "$file")"
-      if sbctl verify "$file" >/dev/null 2>&1; then
-        echo -e "    ${GREEN}[ok]${NC} already signed"
-      else
-        echo -e "    ${YELLOW}[signing]${NC} $(basename "$file")"
-        sudo sbctl sign -s "$file"
-        needs_signing=true
-      fi
+    # Triple-check: it's a file, not a directory, and exists
+    if [[ ! -f "$file" ]] || [[ -d "$file" ]]; then
+      continue
+    fi
+
+    log_info "Checking $(basename "$file")"
+    if sbctl verify "$file" >/dev/null 2>&1; then
+      echo -e "    ${GREEN}[ok]${NC} already signed"
     else
-      echo -e "    ${YELLOW}[skipped]${NC} not present: $(basename "$file")"
+      echo -e "    ${YELLOW}[signing]${NC} $(basename "$file")"
+      sudo sbctl sign -s "$file"
+      needs_signing=true
     fi
   done
 
   return $([ "$needs_signing" = true ] && echo 0 || echo 1)
 }
 
+# ENHANCED: Update hash for UKI file
 update_hash() {
-  local machine_id uki_base uki_file
+  local machine_id
   machine_id=$(get_machine_id)
-  uki_base=$(get_uki_base)
-  uki_file=$(get_uki_file "$machine_id" "$uki_base")
+
+  # Find the UKI file (ensure it's a regular file)
+  local uki_file
+  uki_file=$(find /boot -type f -name "${machine_id}_linux.efi" 2>/dev/null | head -1 || true)
+
+  if [[ -z "$uki_file" ]]; then
+    # Try to find any UKI file (still ensuring it's a regular file)
+    uki_file=$(find /boot -type f -name "*_linux.efi" 2>/dev/null | head -1 || true)
+  fi
 
   if [[ ! -f "$uki_file" ]] || [[ ! -f "$LIMINE_CONF" ]]; then
     return 1
@@ -288,15 +412,17 @@ update_hash() {
 
   local new_hash current_hash
   new_hash=$(b2sum "$uki_file" | awk '{print $1}')
+  local uki_filename
+  uki_filename=$(basename "$uki_file")
 
-  if grep -qE "${machine_id}_linux\.efi" "$LIMINE_CONF"; then
-    current_hash=$(grep -E "${machine_id}_linux\.efi" "$LIMINE_CONF" |
+  if grep -qE "${uki_filename}" "$LIMINE_CONF"; then
+    current_hash=$(grep -E "${uki_filename}" "$LIMINE_CONF" |
       sed -E 's/.*#([0-9a-f]{128})/\1/' 2>/dev/null || true)
   fi
 
   if [[ "$new_hash" != "$current_hash" ]]; then
-    log_info "Updating BLAKE2B hash in limine.conf"
-    sudo sed -i -E "s|(image_path:.*${machine_id}_linux\.efi)(#.*)?$|\1#${new_hash}|" \
+    log_info "Updating BLAKE2B hash for $uki_filename in limine.conf"
+    sudo sed -i -E "s|(image_path:.*${uki_filename})(#.*)?$|\1#${new_hash}|" \
       "$LIMINE_CONF"
     log_success "Hash updated: ${new_hash:0:16}..."
     return 0
@@ -306,12 +432,46 @@ update_hash() {
 }
 
 verify_signatures() {
-  if timeout 30 sudo sbctl verify >/dev/null 2>&1; then
+  # Get all Linux EFI files to verify (files only, not directories)
+  local -a efi_files
+  mapfile -t efi_files < <(find_linux_efi_files)
+
+  local all_verified=true
+  local verification_output=""
+
+  # Verify each file individually
+  for file in "${efi_files[@]}"; do
+    if [[ -f "$file" ]]; then
+      local filename=$(basename "$file")
+      local dir_hint=""
+
+      # Add directory hint for duplicate filenames
+      if [[ "$filename" == "BOOTX64.EFI" ]]; then
+        if [[ "$file" =~ /limine/ ]]; then
+          dir_hint=" (limine)"
+        elif [[ "$file" =~ /BOOT/ ]]; then
+          dir_hint=" (BOOT)"
+        fi
+      fi
+
+      if timeout 5 sudo sbctl verify "$file" >/dev/null 2>&1; then
+        verification_output+="✓ ${filename}${dir_hint}\n"
+      else
+        verification_output+="✗ ${filename}${dir_hint}\n"
+        all_verified=false
+      fi
+    fi
+  done
+
+  if [[ -n "$verification_output" ]]; then
+    echo -e "$verification_output"
+  fi
+
+  if [[ "$all_verified" = true ]]; then
     log_success "All signatures verified"
     return 0
   else
     log_warning "Some signature issues detected"
-    timeout 30 sudo sbctl verify || true
     return 1
   fi
 }
@@ -325,6 +485,13 @@ cmd_setup() {
   # Check not running as root
   if [[ $EUID -eq 0 ]]; then
     log_error "Don't run setup as root. The script will use sudo when needed."
+    exit 1
+  fi
+
+  # Authenticate sudo upfront (like pacman -Syu)
+  log_info "Authenticating for system changes..."
+  if ! sudo -v; then
+    log_error "Failed to authenticate"
     exit 1
   fi
 
@@ -346,16 +513,30 @@ cmd_setup() {
   fi
   verify_signatures
 
-  # Step 5: Smart completion messages based on actual state
+  # Step 5: Check and add Windows entry if needed
+  ensure_windows_entry
+
+  # Step 6: Smart completion messages based on actual state
   echo ""
   if check_keys; then
-    if timeout 10 sudo sbctl status 2>/dev/null | grep -q "Setup Mode"; then
+    # Check if we're in Setup Mode (need enrollment) or keys are already enrolled
+    local sb_status
+    sb_status=$(timeout 10 sudo sbctl status 2>/dev/null || echo "")
+
+    if echo "$sb_status" | grep -q "Setup Mode.*✓ Enabled\|Setup Mode.*Enabled"; then
+      # Setup Mode is ENABLED = need to enroll keys
       show_enrollment_instructions
       echo ""
       log_info "Next step: $SCRIPT_NAME --enroll"
-    else
-      log_success "✅ Keys are enrolled and secure boot appears to be working!"
+    elif echo "$sb_status" | grep -q "Secure Boot.*✓ Enabled\|Secure Boot.*Enabled"; then
+      # Secure Boot is ENABLED = everything is working!
+      log_success "✅ Keys are enrolled and secure boot is fully operational!"
       log_info "System will automatically maintain secure boot from now on"
+    else
+      # Can't determine status or secure boot is disabled
+      log_success "✅ Keys exist but secure boot may be disabled"
+      log_info "Enable Secure Boot in BIOS if not already enabled"
+      log_info "Use '$SCRIPT_NAME --status' to check current state"
     fi
   else
     log_warning "⚠️  No secure boot keys found"
@@ -380,11 +561,23 @@ cmd_enroll() {
 
   # Check setup mode (but don't fail if we can't determine it)
   local setup_mode_check=false
-  if timeout 10 sudo sbctl status 2>/dev/null | grep -q "Setup Mode"; then
+  local sb_status
+  sb_status=$(timeout 10 sudo sbctl status 2>/dev/null || echo "")
+
+  if echo "$sb_status" | grep -q "Setup Mode.*✓ Enabled\|Setup Mode.*Enabled"; then
     setup_mode_check=true
     log_info "System is in Setup Mode - ready for enrollment"
+  elif echo "$sb_status" | grep -q "Setup Mode.*✓ Disabled\|Setup Mode.*Disabled"; then
+    log_warning "Keys appear to be already enrolled (Setup Mode is disabled)"
+    log_info "Your secure boot setup may already be complete"
+    echo ""
+    read -p "Continue with key enrollment anyway? (y/N): " continue_enroll
+    if [[ ! $continue_enroll =~ ^[Yy]$ ]]; then
+      log_info "Key enrollment cancelled"
+      return 0
+    fi
   else
-    log_warning "System may not be in Setup Mode"
+    log_warning "Cannot determine Setup Mode status"
     echo ""
     echo "To enter Setup Mode:"
     echo "  1. Reboot and enter BIOS/UEFI setup"
@@ -434,6 +627,14 @@ cmd_update() {
   fi
 
   log_info "Starting secure boot maintenance..."
+
+  # For manual runs (not hook), authenticate upfront
+  if [[ -t 0 ]]; then # Check if running interactively
+    if ! sudo -v 2>/dev/null; then
+      log_error "Failed to authenticate"
+      exit 1
+    fi
+  fi
 
   local files_signed=false
   local hash_updated=false
@@ -502,12 +703,38 @@ cmd_status() {
     fi
   fi
 
-  # Show sbctl status with timeout
+  # Check Windows entry
+  if grep -qi "windows\|bootmgfw" "$LIMINE_CONF" 2>/dev/null; then
+    log_success "Windows boot entry configured"
+  else
+    local windows_path
+    windows_path=$(find_windows_bootmgr)
+    if [[ -n "$windows_path" ]]; then
+      log_warning "Windows detected but not in boot menu (run --add-windows to add)"
+    fi
+  fi
+
+  # List found EFI files
+  echo ""
+  log_info "Linux EFI files found:"
+  local -a efi_files
+  mapfile -t efi_files < <(find_linux_efi_files)
+  for file in "${efi_files[@]}"; do
+    echo "  - $(basename "$file") ($(dirname "$file"))"
+  done
+
+  # Show sbctl status with timeout (needs authentication)
   if command -v sbctl >/dev/null 2>&1; then
     echo ""
-    timeout 15 sudo sbctl status 2>/dev/null || log_warning "sbctl status timed out or failed"
-    echo ""
-    verify_signatures
+    log_info "Authenticating to check detailed status..."
+    if sudo -v 2>/dev/null; then
+      timeout 15 sudo sbctl status 2>/dev/null || log_warning "sbctl status timed out or failed"
+      echo ""
+      log_info "Verifying EFI file signatures:"
+      verify_signatures
+    else
+      log_warning "Authentication failed - skipping detailed status"
+    fi
   else
     log_warning "sbctl not found - install packages first"
   fi
@@ -515,30 +742,49 @@ cmd_status() {
 
 cmd_sign() {
   log_step "Manual File Signing"
+
+  # Authenticate upfront
+  log_info "Authenticating for system changes..."
+  if ! sudo -v; then
+    log_error "Failed to authenticate"
+    exit 1
+  fi
+
   sign_files
   update_hash
   verify_signatures
   log_success "Manual signing complete"
 }
 
+# NEW: Command to add Windows entry
+cmd_add_windows() {
+  log_info "Authenticating for system changes..."
+  if ! sudo -v; then
+    log_error "Failed to authenticate"
+    exit 1
+  fi
+  ensure_windows_entry
+}
+
 show_usage() {
-  echo -e "${BOLD}Omarchy Secure Boot Manager v1.0${NC}"
+  echo -e "${BOLD}Omarchy Secure Boot Manager v1.1${NC}"
   echo "Complete setup and maintenance for Limine + UKI secure boot"
   echo ""
   echo -e "${BOLD}USAGE:${NC}"
   echo "  $0 [COMMAND]"
   echo ""
   echo -e "${BOLD}SETUP COMMANDS:${NC}"
-  echo "  --setup      Complete setup for new systems (robust)"
-  echo "  --enroll     Enroll keys after BIOS setup"
+  echo "  --setup        Complete setup for new systems (robust)"
+  echo "  --enroll       Enroll keys after BIOS setup"
+  echo "  --add-windows  Add Windows entry to boot menu"
   echo ""
   echo -e "${BOLD}MAINTENANCE COMMANDS:${NC}"
-  echo "  --update     Update signatures and hashes (used by pacman hook)"
-  echo "  --sign       Manual signing of all EFI files"
-  echo "  --status     Show secure boot status and verification"
+  echo "  --update       Update signatures and hashes (used by pacman hook)"
+  echo "  --sign         Manual signing of all EFI files"
+  echo "  --status       Show secure boot status and verification"
   echo ""
   echo -e "${BOLD}HELP:${NC}"
-  echo "  --help       Show this help message"
+  echo "  --help         Show this help message"
   echo ""
   echo -e "${BOLD}TYPICAL WORKFLOW:${NC}"
   echo "  1. $0 --setup"
@@ -546,7 +792,15 @@ show_usage() {
   echo "  3. $0 --enroll"
   echo "  4. Reboot → BIOS → Enable Secure Boot"
   echo ""
+  echo -e "${BOLD}NEW FEATURES (v1.1):${NC}"
+  echo "  • Dynamic discovery of all Linux EFI files"
+  echo "  • Windows detection across all mounted partitions"
+  echo "  • Enhanced file verification (no directory operations)"
+  echo "  • Upfront authentication (single password prompt)"
+  echo "  • Individual file verification with status display"
+  echo ""
   echo -e "${BOLD}NOTE:${NC} After setup, maintenance is automatic via pacman hooks."
+  echo "      The hook uses --update for minimal, fast maintenance."
   echo "      Use --status to check system state anytime."
   echo ""
 }
@@ -568,6 +822,9 @@ main() {
     ;;
   --status)
     cmd_status
+    ;;
+  --add-windows)
+    cmd_add_windows
     ;;
   --help | -h | "")
     show_usage
