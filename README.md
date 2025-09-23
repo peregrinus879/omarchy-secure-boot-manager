@@ -5,7 +5,7 @@
 A robust, single-script solution that handles everything from initial setup to ongoing maintenance with comprehensive error handling and edge case support.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.2-brightgreen.svg)](https://github.com/peregrinus879/omarchy-secure-boot-manager)
+[![Version](https://img.shields.io/badge/version-1.2.1-brightgreen.svg)](https://github.com/peregrinus879/omarchy-secure-boot-manager)
 
 ## 🚀 Quick Start
 
@@ -19,7 +19,21 @@ chmod +x omarchy-secure-boot.sh
 ./omarchy-secure-boot.sh --setup
 ```
 
-## ✨ What's New in v1.2
+## ✨ What's New in v1.2.1
+
+### 🔧 **Code Cleanup**
+- Removed unused `find_snapshot_ukis()` function (dead code)
+- Removed unnecessary `files_signed` variable
+- Cleaner, more maintainable codebase
+
+### 🪟 **Smart Windows Detection**
+- Automatically detects Windows 10 vs Windows 11
+- Falls back to generic "Microsoft Windows" if version unclear
+- More accurate boot menu entries
+
+---
+
+## Previous: v1.2
 
 ### 🔄 **Complete Snapshot Hash Management**
 - Handles non-standard snapshot naming (files ending with SHA256 instead of .efi)
@@ -261,9 +275,10 @@ The script manages two types of hashes:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **v1.2** | 2024-09-23 | Snapshot hash management, code reorganization, improved safety |
-| **v1.1** | 2024-09-22 | Dynamic EFI discovery, Windows support, directory error fixes |
-| **v1.0** | 2024-09 | Initial release with robust setup |
+| **v1.2.1** | 2025-09-23 | Code cleanup, smart Windows version detection, removed dead code |
+| **v1.2** | 2025-09-23 | Snapshot hash management, code reorganization, improved safety |
+| **v1.1** | 2025-09-22 | Dynamic EFI discovery, Windows support, directory error fixes |
+| **v1.0** | 2025-09-18 | Initial release with robust setup |
 
 ## 💡 Best Practices
 
