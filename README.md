@@ -1,13 +1,13 @@
 # Omarchy Secure Boot Manager
 
-**Complete secure boot automation for Omarchy with Limine bootloader + UKI.**
+**Complete secure boot automation for Omarchy with Limine bootloader + UKI, including full snapshot support.**
 
-One script handles everything from packages to automation with robust error handling.
+A robust, single-script solution that handles everything from initial setup to ongoing maintenance with comprehensive error handling and edge case support.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.1-brightgreen.svg)](https://github.com/peregrinus879/omarchy-secure-boot-manager)
+[![Version](https://img.shields.io/badge/version-1.2-brightgreen.svg)](https://github.com/peregrinus879/omarchy-secure-boot-manager)
 
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
 # Clone and run
@@ -15,91 +15,117 @@ git clone https://github.com/peregrinus879/omarchy-secure-boot-manager.git
 cd omarchy-secure-boot-manager
 chmod +x omarchy-secure-boot.sh
 
-# Complete setup (robust)
+# Complete setup with snapshot support
 ./omarchy-secure-boot.sh --setup
 ```
 
-## What's New in v1.1
+## ✨ What's New in v1.2
 
-🔍 **Dynamic EFI Discovery**
-- Automatically finds ALL Linux-related .efi files
-- No more hardcoded file lists - adapts to any installation
-- Intelligently excludes Windows files from Linux signing
+### 🔄 **Complete Snapshot Hash Management**
+- Handles non-standard snapshot naming (files ending with SHA256 instead of .efi)
+- Exact matching for snapshots with identical base names
+- Smart detection shows which snapshots need updates
+- Bulk updates with safety confirmations
 
-✅ **Enhanced Verification**
-- Only processes actual .efi files (not directories or symlinks)
-- Individual file verification with clear status display
-- Completely eliminates directory operation errors
-- Triple-checks file types before operations
+### 🏗️ **Professional Code Organization**
+- 9 logical sections for maintainability
+- Utility functions to eliminate code duplication
+- Consistent error handling patterns
+- Clean separation of concerns
 
-🪟 **Windows Boot Support**
-- Automatically detects Windows installations
-- Adds Windows entry to Limine boot menu if missing
-- Supports both same-partition and multi-partition setups
+### 🛡️ **Enhanced Safety & Reliability**
+- Automatic backups before configuration changes
+- Better hash mismatch detection and reporting
+- Improved status checking that finds correct files
+- Timeout protection on all operations
 
-🔧 **Critical Fixes**
-- Fixed "can't verify directory" errors
-- Added timeout protection for each file operation
-- Individual file processing prevents bulk failures
+## 📋 What It Does
 
-## What It Does
-
-🔧 **Complete Setup**
+### 🔧 **Complete Setup**
 - Installs required packages (`sbctl`, `efitools`, `sbsigntools`)
-- **Installs automation FIRST** (never gets stuck)
+- **Always installs automation first** - never gets stuck
 - Creates secure boot keys with clear BIOS guidance
-- Handles errors gracefully - essential components always install
-- **NEW:** Detects and configures Windows dual-boot
+- Signs ALL Linux EFI files including snapshots
+- Fixes snapshot hash mismatches automatically
+- Detects and configures Windows dual-boot
 
-⚡ **Automatic Maintenance**  
+### ⚡ **Automatic Maintenance**  
 - Signs ALL Linux EFI files after every package update
 - Updates BLAKE2B hashes in `limine.conf`
+- Correctly handles complex snapshot naming schemes
 - Prevents secure boot failures after system updates
-- **NEW:** Dynamic file discovery - no maintenance needed
+- Zero configuration needed after initial setup
 
-🛡️ **Self-Managing**
+### 🛡️ **Self-Managing System**
 - Clean installation - removes old versions first
 - Installs itself to `/usr/local/bin/`
 - Creates pacman hook for automatic updates
-- Timeout protection prevents hanging commands
+- Automatic backups with timestamps
+- Comprehensive status reporting
 
-## Commands
+## 🎮 Commands
 
-```bash
-./omarchy-secure-boot.sh --setup        # Complete robust setup
-./omarchy-secure-boot.sh --enroll       # Enroll keys (after BIOS setup) 
-./omarchy-secure-boot.sh --status       # Check secure boot status
-./omarchy-secure-boot.sh --sign         # Manual signing if needed
-./omarchy-secure-boot.sh --add-windows  # Add Windows to boot menu
-./omarchy-secure-boot.sh --update       # Maintenance (used by hook)
-./omarchy-secure-boot.sh --help         # Show all commands
-```
+| Command | Description |
+|---------|-------------|
+| `--setup` | Complete robust setup with snapshot support |
+| `--enroll` | Enroll keys after BIOS setup |
+| `--status` | Check complete system status |
+| `--fix-hashes` | Fix all hash mismatches |
+| `--sign` | Manual signing with hash fixes |
+| `--add-windows` | Add Windows to boot menu |
+| `--update` | Maintenance (used by hook) |
+| `--help` | Show all commands |
 
-## Setup Process
+## 📝 Setup Process
 
 ### For New Systems
-1. **Clone and setup**: `./omarchy-secure-boot.sh --setup`
+
+1. **Initial Setup**
+   ```bash
+   ./omarchy-secure-boot.sh --setup
+   ```
    - ✅ Installs packages
-   - ✅ **Always installs automation** (even if other steps fail)
+   - ✅ Always installs automation (even if other steps fail)
    - ✅ Creates keys (optional - setup continues if this fails)
-   - ✅ Signs ALL Linux EFI files found
-   - ✅ Checks for Windows and offers to add boot entry
-   - ✅ Verifies status
+   - ✅ Signs ALL Linux EFI files including snapshots
+   - ✅ Fixes snapshot hash mismatches automatically
+   - ✅ Detects Windows and offers boot entry
+   - ✅ Verifies everything with detailed reporting
    
-2. **BIOS configuration** (if keys were created): 
+2. **BIOS Configuration** (if keys were created)
    - Reboot → Enter BIOS/UEFI setup
-   - Clear all existing secure boot keys (enter Setup Mode)
+   - Navigate to Secure Boot settings
+   - Clear all existing keys (enter Setup Mode)
    - Save and reboot back to Linux
    
-3. **Enroll keys**: `./omarchy-secure-boot.sh --enroll`
+3. **Key Enrollment**
+   ```bash
+   ./omarchy-secure-boot.sh --enroll
+   ```
    
-4. **Enable secure boot**:
-   - Reboot → Enter BIOS → Enable Secure Boot
+4. **Enable Secure Boot**
+   - Reboot → Enter BIOS
+   - Enable Secure Boot
    - Save and reboot
    
 5. **Done!** Everything is now automated
 
+### For Systems with Existing Snapshots
+
+If you have snapshots created before setting up secure boot:
+
+```bash
+# Check for hash mismatches
+./omarchy-secure-boot.sh --status
+
+# Fix all mismatches automatically
+./omarchy-secure-boot.sh --fix-hashes
+```
+
+This eliminates the need to press 'Y' when booting old snapshots!
+
 ### For Dual-Boot Systems
+
 ```bash
 # Setup handles Windows automatically
 ./omarchy-secure-boot.sh --setup
@@ -108,68 +134,82 @@ chmod +x omarchy-secure-boot.sh
 ./omarchy-secure-boot.sh --add-windows
 ```
 
-## Features
+## ⭐ Key Features
 
-✅ **Complete Setup** - Never gets stuck, always installs automation  
-✅ **Dynamic Discovery** - Finds all EFI files automatically  
-✅ **Windows Support** - Configures dual-boot seamlessly  
-✅ **Error Resilient** - Continues even when individual steps fail  
-✅ **Clean Installation** - Removes old versions before installing new  
-✅ **Timeout Protection** - Commands can't hang indefinitely  
-✅ **Self-Installing** - Copies itself to system during setup  
-✅ **Self-Maintaining** - Creates pacman hook for automatic updates  
-✅ **Comprehensive** - Handles packages, keys, signing, hashes  
-✅ **User-Friendly** - Clear instructions and colored output  
-✅ **Smart Recovery** - Provides guidance when things go wrong  
+| Feature | Description |
+|---------|-------------|
+| **Robust Setup** | Never fails to install automation |
+| **Snapshot Support** | Handles all UKI naming schemes |
+| **Hash Management** | Detects and fixes mismatches |
+| **Dynamic Discovery** | Finds all EFI files automatically |
+| **Windows Support** | Dual-boot configuration |
+| **Error Resilient** | Continues even when steps fail |
+| **Auto Backup** | Creates timestamped backups |
+| **Clean Installation** | Removes old versions first |
+| **Timeout Protection** | Commands can't hang |
+| **Self-Installing** | Copies itself to system |
+| **Self-Maintaining** | Pacman hook automation |
+| **User-Friendly** | Colored output with clear instructions |
 
-## Technical Details
+## 🔬 Technical Details
 
-### Dynamic EFI Discovery (v1.1)
+### Snapshot Hash Management
+The script handles complex snapshot naming where files don't end with `.efi` but with their SHA256 hash:
+```
+# Standard: filename.efi
+# Your snapshots: filename.efi_sha256_[64-char-hash]
+```
+
+- Detects snapshots with incorrect hashes after signing
+- Shows detailed comparison of expected vs actual hashes
+- Interactive confirmation before bulk updates
+- Creates automatic backup of limine.conf
+- Handles complex filename patterns safely
+- Works with both standard and non-standard naming
+
+### How Hash Mismatches Occur
+1. **Pre-existing snapshots**: Created with unsigned UKIs
+2. **Signing changes files**: Adds signature data to the EFI
+3. **Hash becomes invalid**: BLAKE2B hash no longer matches
+4. **Without fix**: Boot shows warning, requires pressing 'Y'
+5. **With v1.2 fix**: Hashes updated, boots without warnings
+
+### Dynamic EFI Discovery
 - Scans `/boot` for all `.efi` files
 - Automatically excludes Windows-related files
 - No hardcoded paths - works with any installation
-- Triple-checks file types before any operation
-- Individual file verification with clear status reporting
-- Completely eliminates directory operation errors
+- Triple-checks file types before operations
+- Individual file verification with status reporting
 
-### Windows Boot Detection (v1.1)
-Searches for Windows Boot Manager in:
+### Windows Boot Detection
+Searches multiple locations:
 - `/boot/EFI/Microsoft/Boot/bootmgfw.efi`
 - `/boot/efi/Microsoft/Boot/bootmgfw.efi`
 - `/efi/Microsoft/Boot/bootmgfw.efi`
-- Other standard locations
+- All mounted FAT/NTFS partitions
 
-Creates proper Limine entry with:
-- Correct EFI chainload protocol
-- Proper partition detection
-- Priority ordering
+### System Integration
+| Component | Location |
+|-----------|----------|
+| Pacman hook | `/etc/pacman.d/hooks/99-omarchy-secure-boot.hook` |
+| Script | `/usr/local/bin/omarchy-secure-boot.sh` |
+| Limine config | `/boot/limine.conf` |
+| Backups | `/boot/limine.conf.backup.YYYYMMDD_HHMMSS` |
 
-### Integration
-- Creates pacman hook: `/etc/pacman.d/hooks/99-omarchy-secure-boot.hook`
-- Installs script: `/usr/local/bin/omarchy-secure-boot.sh`
-- Updates BLAKE2B hashes in `/boot/limine.conf`
-- Works alongside existing Omarchy hooks (proper execution order)
+### Code Organization (v1.2)
+```
+Section 1: Configuration & Constants
+Section 2: Output Colors & Logging
+Section 3: Core Utility Functions
+Section 4: Discovery Functions
+Section 5: Verification & Check Functions
+Section 6: Installation & Setup Functions
+Section 7: Core Operations
+Section 8: Command Implementations
+Section 9: Help & Main Execution
+```
 
-### Robust Design
-
-#### Setup Flow (v1.1)
-1. **Install packages** (critical foundation)
-2. **Install automation FIRST** (ensures updates work even if setup fails later)
-3. **Create keys** (optional - setup continues regardless)
-4. **Sign ALL Linux EFI files** (dynamic discovery with type validation)
-5. **Check for Windows** (add boot entry if found)
-6. **Verify status** (individual file verification with clear reporting)
-
-#### Error Handling
-- Setup never exits early - automation always gets installed
-- Clear error messages with recovery instructions
-- Graceful handling of missing files or failed commands
-- Smart status reporting based on actual system state
-- Timeout protection prevents hanging on EFI operations
-- Complete elimination of directory operation errors
-- Individual file verification prevents bulk failures
-
-## Requirements
+## 📊 Requirements
 
 - **Arch Linux** with Limine bootloader
 - **UKI (Unified Kernel Image)** setup  
@@ -177,61 +217,77 @@ Creates proper Limine entry with:
 - **Administrative access** for system configuration
 - **Optional:** Windows installation for dual-boot
 
-## Version History
+## 🔧 Troubleshooting
 
-- **v1.1** (2024-09-22) - Dynamic EFI discovery, Windows boot support, upfront auth, fixed directory errors
-- **v1.0** (2024-09) - Initial release with complete setup and robust error handling
-
-## Troubleshooting
-
-### Check Status
+### Check Complete Status
 ```bash
 omarchy-secure-boot.sh --status
 ```
-Shows:
-- All discovered Linux EFI files
+This shows:
+- All discovered EFI files (current + snapshots)
+- Hash mismatch detection with details
 - Windows boot entry status
 - Package installation state
 - Key enrollment status
-- Signature verification
+- Signature verification results
 
-### Manual Operations
-```bash
-# Sign all Linux EFI files
-omarchy-secure-boot.sh --sign
+### Common Issues & Solutions
 
-# Add Windows to boot menu
-omarchy-secure-boot.sh --add-windows
+| Issue | Solution |
+|-------|----------|
+| Hash mismatch warnings | Run `--fix-hashes` to update all hashes |
+| Snapshots won't boot | Run `--fix-hashes` for snapshot hash updates |
+| Windows not in boot menu | Run `--add-windows` to detect and add |
+| Some EFI files not signed | Run `--sign` to re-scan and sign all |
+| Keys won't enroll | Ensure BIOS is in Setup Mode |
+| Commands hang | Script has timeout protection (15s) |
 
-# Verify everything
-sudo sbctl verify
-```
+### Understanding Limine Hashes
 
-### Common Issues
+The script manages two types of hashes:
 
-**Can't verify/sign directory error**: Fixed in v1.1 - now only processes actual files
+1. **SHA256 in filename**: Part of the snapshot naming convention
+   ```
+   4a1b942b..._linux.efi_sha256_5ab709df...
+   ```
+   
+2. **BLAKE2B after #**: Actually verified by Limine at boot
+   ```
+   image_path: .../file.efi#255a5c8055f4d06c...
+   ```
+   This is what causes "hash mismatch" warnings
 
-**Windows not in boot menu**: Run `--add-windows` or `--setup` to detect and add
+## 📚 Version History
 
-**Some EFI files not signed**: v1.1 dynamically finds all files - re-run `--sign`
+| Version | Date | Changes |
+|---------|------|---------|
+| **v1.2** | 2024-09-23 | Snapshot hash management, code reorganization, improved safety |
+| **v1.1** | 2024-09-22 | Dynamic EFI discovery, Windows support, directory error fixes |
+| **v1.0** | 2024-09 | Initial release with robust setup |
 
-**Setup stops at key creation**: v1.0+ fixes this - automation always installs first
+## 💡 Best Practices
 
-**Old script still running**: v1.0+ does clean installation - removes old versions
+1. **New Installation**: Run `--setup` once, handles everything
+2. **Existing System**: Check `--status` first, then `--fix-hashes` if needed
+3. **After Kernel Updates**: Automatic via pacman hook
+4. **After Manual Changes**: Run `--sign` to ensure consistency
+5. **Regular Checks**: Use `--status` to verify system health
 
-**Keys won't enroll**: Check BIOS settings, ensure Setup Mode is enabled
-
-**Commands hang**: v1.0+ adds timeout protection to prevent hanging
-
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly on various setups
+4. Test thoroughly (especially with snapshots)
 5. Submit a pull request
 
-## Repository Structure
+### Testing Guidelines
+- Test with various snapshot naming schemes
+- Verify Windows detection on dual-boot systems
+- Check hash updates with pre-existing snapshots
+- Ensure automation continues after partial failures
+
+## 📁 Repository Structure
 
 ```
 omarchy-secure-boot-manager/
@@ -240,12 +296,24 @@ omarchy-secure-boot-manager/
 └── LICENSE                   # MIT License
 ```
 
-## Support
+## 🆘 Support
 
-- **Issues**: Use GitHub Issues for bug reports
-- **Discussions**: Use GitHub Discussions for questions
-- **Documentation**: This README covers all functionality
+- **Issues**: [GitHub Issues](https://github.com/peregrinus879/omarchy-secure-boot-manager/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/peregrinus879/omarchy-secure-boot-manager/discussions)
+- **Wiki**: [Documentation Wiki](https://github.com/peregrinus879/omarchy-secure-boot-manager/wiki)
+
+## 📜 License
+
+MIT License - See [LICENSE](LICENSE) file for details
+
+## 🙏 Acknowledgments
+
+- Omarchy Linux community for testing and feedback
+- Limine bootloader developers
+- sbctl project for secure boot management tools
 
 ---
 
-**Secure boot should be simple, reliable, and universal. This tool makes it so.**
+**Secure boot should be simple, reliable, and work with any setup. This tool makes it so.**
+
+*If this tool helped you, consider starring the repository!*
