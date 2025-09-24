@@ -21,7 +21,7 @@ chmod +x omarchy-secure-boot.sh
 
 ## ✨ Version History
 
-### v1.3.0 (2024-01-24)
+### v1.3.0 (2025-01-24)
 **The Conflict Resolution Update** - Permanently neutralizes the conflicting sbctl hook that causes errors with Omarchy's directory structure.
 
 - **NoExtract Configuration**: Prevents problematic sbctl hook from ever being installed/reinstalled
@@ -30,14 +30,14 @@ chmod +x omarchy-secure-boot.sh
 - **Automatic Migration**: Seamlessly upgrades from v1.2.x installations
 - **Enhanced Status**: Shows NoExtract configuration and conflict resolution status
 
-### v1.2.1 (2024-01-23)
+### v1.2.1 (2025-01-23)
 **The Refinement Update** - Code cleanup and intelligent Windows detection for more accurate boot entries.
 
 - **Code Cleanup**: Removed unused functions and variables for maintainability
 - **Smart Windows Detection**: Automatically detects Windows 10 vs Windows 11
 - **Cleaner Codebase**: Eliminated dead code paths
 
-### v1.2.0 (2024-01-23)
+### v1.2.0 (2025-01-23)
 **The Snapshot Perfection Update** - Complete support for Omarchy's complex snapshot naming schemes and professional code organization.
 
 - **Complete Snapshot Hash Management**: Handles files ending with SHA256 instead of .efi
@@ -46,14 +46,14 @@ chmod +x omarchy-secure-boot.sh
 - **Enhanced Safety**: Automatic backups before configuration changes
 - **Better Error Reporting**: Detailed hash mismatch information
 
-### v1.1.0 (2024-01-22)
+### v1.1.0 (2025-01-22)
 **The Universal Compatibility Update** - Dynamic discovery and Windows dual-boot support.
 
 - **Dynamic EFI Discovery**: Finds all Linux EFI files automatically
 - **Windows Support**: Detects and configures Windows dual-boot
 - **Directory Bug Fixes**: Handles files vs directories correctly
 
-### v1.0.0 (2024-01-18)
+### v1.0.0 (2025-01-18)
 **The Foundation Release** - Initial robust implementation with core automation features.
 
 - **Robust Setup**: Always installs automation even if other steps fail
