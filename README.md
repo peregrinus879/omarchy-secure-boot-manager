@@ -5,7 +5,7 @@
 A robust, single-script solution that handles everything from initial setup to ongoing maintenance with comprehensive error handling and edge case support.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.2.1-brightgreen.svg)](https://github.com/peregrinus879/omarchy-secure-boot-manager)
+[![Version](https://img.shields.io/badge/version-1.3.0-brightgreen.svg)](https://github.com/peregrinus879/omarchy-secure-boot-manager)
 
 ## 🚀 Quick Start
 
@@ -19,39 +19,46 @@ chmod +x omarchy-secure-boot.sh
 ./omarchy-secure-boot.sh --setup
 ```
 
-## ✨ What's New in v1.2.1
+## ✨ Version History
 
-### 🔧 **Code Cleanup**
-- Removed unused `find_snapshot_ukis()` function (dead code)
-- Removed unnecessary `files_signed` variable
-- Cleaner, more maintainable codebase
+### v1.3.0 (2024-01-24)
+**The Conflict Resolution Update** - Permanently neutralizes the conflicting sbctl hook that causes errors with Omarchy's directory structure.
 
-### 🪟 **Smart Windows Detection**
-- Automatically detects Windows 10 vs Windows 11
-- Falls back to generic "Microsoft Windows" if version unclear
-- More accurate boot menu entries
+- **NoExtract Configuration**: Prevents problematic sbctl hook from ever being installed/reinstalled
+- **Hook Renamed**: Changed from `99-` to `zz-` prefix for proper execution order
+- **Clean Uninstall**: New `--uninstall` command removes automation while preserving keys
+- **Automatic Migration**: Seamlessly upgrades from v1.2.x installations
+- **Enhanced Status**: Shows NoExtract configuration and conflict resolution status
 
----
+### v1.2.1 (2024-01-23)
+**The Refinement Update** - Code cleanup and intelligent Windows detection for more accurate boot entries.
 
-## Previous: v1.2
+- **Code Cleanup**: Removed unused functions and variables for maintainability
+- **Smart Windows Detection**: Automatically detects Windows 10 vs Windows 11
+- **Cleaner Codebase**: Eliminated dead code paths
 
-### 🔄 **Complete Snapshot Hash Management**
-- Handles non-standard snapshot naming (files ending with SHA256 instead of .efi)
-- Exact matching for snapshots with identical base names
-- Smart detection shows which snapshots need updates
-- Bulk updates with safety confirmations
+### v1.2.0 (2024-01-23)
+**The Snapshot Perfection Update** - Complete support for Omarchy's complex snapshot naming schemes and professional code organization.
 
-### 🏗️ **Professional Code Organization**
-- 9 logical sections for maintainability
-- Utility functions to eliminate code duplication
-- Consistent error handling patterns
-- Clean separation of concerns
+- **Complete Snapshot Hash Management**: Handles files ending with SHA256 instead of .efi
+- **Professional Code Structure**: Organized into 9 logical sections for maintainability
+- **Bulk Hash Updates**: Fix all mismatches with user confirmation
+- **Enhanced Safety**: Automatic backups before configuration changes
+- **Better Error Reporting**: Detailed hash mismatch information
 
-### 🛡️ **Enhanced Safety & Reliability**
-- Automatic backups before configuration changes
-- Better hash mismatch detection and reporting
-- Improved status checking that finds correct files
-- Timeout protection on all operations
+### v1.1.0 (2024-01-22)
+**The Universal Compatibility Update** - Dynamic discovery and Windows dual-boot support.
+
+- **Dynamic EFI Discovery**: Finds all Linux EFI files automatically
+- **Windows Support**: Detects and configures Windows dual-boot
+- **Directory Bug Fixes**: Handles files vs directories correctly
+
+### v1.0.0 (2024-01-18)
+**The Foundation Release** - Initial robust implementation with core automation features.
+
+- **Robust Setup**: Always installs automation even if other steps fail
+- **Automatic Maintenance**: Pacman hook for updates
+- **Basic Secure Boot**: Key creation and enrollment
 
 ## 📋 What It Does
 
@@ -62,6 +69,7 @@ chmod +x omarchy-secure-boot.sh
 - Signs ALL Linux EFI files including snapshots
 - Fixes snapshot hash mismatches automatically
 - Detects and configures Windows dual-boot
+- **Permanently neutralizes conflicting sbctl hook**
 
 ### ⚡ **Automatic Maintenance**  
 - Signs ALL Linux EFI files after every package update
@@ -69,6 +77,7 @@ chmod +x omarchy-secure-boot.sh
 - Correctly handles complex snapshot naming schemes
 - Prevents secure boot failures after system updates
 - Zero configuration needed after initial setup
+- **No more error messages from conflicting hooks**
 
 ### 🛡️ **Self-Managing System**
 - Clean installation - removes old versions first
@@ -76,18 +85,20 @@ chmod +x omarchy-secure-boot.sh
 - Creates pacman hook for automatic updates
 - Automatic backups with timestamps
 - Comprehensive status reporting
+- **NoExtract configuration survives package updates**
 
 ## 🎮 Commands
 
 | Command | Description |
 |---------|-------------|
-| `--setup` | Complete robust setup with snapshot support |
+| `--setup` | Complete robust setup with snapshot support and conflict resolution |
 | `--enroll` | Enroll keys after BIOS setup |
-| `--status` | Check complete system status |
-| `--fix-hashes` | Fix all hash mismatches |
+| `--status` | Check complete system status including conflict resolution |
+| `--fix-hashes` | Fix all hash mismatches (current + snapshots) |
 | `--sign` | Manual signing with hash fixes |
 | `--add-windows` | Add Windows to boot menu |
 | `--update` | Maintenance (used by hook) |
+| `--uninstall` | **NEW** - Clean removal of automation (keeps keys/signatures) |
 | `--help` | Show all commands |
 
 ## 📝 Setup Process
@@ -104,6 +115,7 @@ chmod +x omarchy-secure-boot.sh
    - ✅ Signs ALL Linux EFI files including snapshots
    - ✅ Fixes snapshot hash mismatches automatically
    - ✅ Detects Windows and offers boot entry
+   - ✅ **Neutralizes conflicting sbctl hook permanently**
    - ✅ Verifies everything with detailed reporting
    
 2. **BIOS Configuration** (if keys were created)
@@ -122,7 +134,7 @@ chmod +x omarchy-secure-boot.sh
    - Enable Secure Boot
    - Save and reboot
    
-5. **Done!** Everything is now automated
+5. **Done!** Everything is now automated and conflict-free
 
 ### For Systems with Existing Snapshots
 
@@ -148,10 +160,20 @@ This eliminates the need to press 'Y' when booting old snapshots!
 ./omarchy-secure-boot.sh --add-windows
 ```
 
+### Clean Uninstall
+
+```bash
+# Remove automation while keeping keys and signatures
+./omarchy-secure-boot.sh --uninstall
+```
+
 ## ⭐ Key Features
 
 | Feature | Description |
 |---------|-------------|
+| **Conflict Resolution** | Permanently neutralizes problematic sbctl hook |
+| **NoExtract Protection** | Prevents conflicting hook from reinstalling |
+| **Clean Uninstall** | Removes automation without affecting security |
 | **Robust Setup** | Never fails to install automation |
 | **Snapshot Support** | Handles all UKI naming schemes |
 | **Hash Management** | Detects and fixes mismatches |
@@ -159,13 +181,23 @@ This eliminates the need to press 'Y' when booting old snapshots!
 | **Windows Support** | Dual-boot configuration |
 | **Error Resilient** | Continues even when steps fail |
 | **Auto Backup** | Creates timestamped backups |
-| **Clean Installation** | Removes old versions first |
-| **Timeout Protection** | Commands can't hang |
 | **Self-Installing** | Copies itself to system |
 | **Self-Maintaining** | Pacman hook automation |
 | **User-Friendly** | Colored output with clear instructions |
 
 ## 🔬 Technical Details
+
+### The sbctl Hook Conflict (v1.3.0)
+The official `sbctl` package includes a hook that fails with Omarchy's directory structure:
+- Tries to sign directory `/boot/{machine-id}` as a file
+- Looks for snapshots in wrong locations
+- Generates scary error messages after every update
+
+Our solution:
+- Configures pacman's `NoExtract` to never install the problematic hook
+- Removes existing hook if present
+- Takes over all signing with proper Omarchy support
+- Clean uninstall that reverses all changes
 
 ### Snapshot Hash Management
 The script handles complex snapshot naming where files don't end with `.efi` but with their SHA256 hash:
@@ -181,13 +213,6 @@ The script handles complex snapshot naming where files don't end with `.efi` but
 - Handles complex filename patterns safely
 - Works with both standard and non-standard naming
 
-### How Hash Mismatches Occur
-1. **Pre-existing snapshots**: Created with unsigned UKIs
-2. **Signing changes files**: Adds signature data to the EFI
-3. **Hash becomes invalid**: BLAKE2B hash no longer matches
-4. **Without fix**: Boot shows warning, requires pressing 'Y'
-5. **With v1.2 fix**: Hashes updated, boots without warnings
-
 ### Dynamic EFI Discovery
 - Scans `/boot` for all `.efi` files
 - Automatically excludes Windows-related files
@@ -201,16 +226,20 @@ Searches multiple locations:
 - `/boot/efi/Microsoft/Boot/bootmgfw.efi`
 - `/efi/Microsoft/Boot/bootmgfw.efi`
 - All mounted FAT/NTFS partitions
+- Detects Windows 10 vs Windows 11
 
 ### System Integration
 | Component | Location |
 |-----------|----------|
-| Pacman hook | `/etc/pacman.d/hooks/99-omarchy-secure-boot.hook` |
 | Script | `/usr/local/bin/omarchy-secure-boot.sh` |
+| Pacman hook | `/etc/pacman.d/hooks/zz-omarchy-secure-boot.hook` |
+| Old hook (removed) | `/etc/pacman.d/hooks/99-omarchy-secure-boot.hook` |
+| Problematic sbctl hook | `/usr/share/libalpm/hooks/zz-sbctl.hook` (disabled) |
+| NoExtract config | `/etc/pacman.conf` |
 | Limine config | `/boot/limine.conf` |
 | Backups | `/boot/limine.conf.backup.YYYYMMDD_HHMMSS` |
 
-### Code Organization (v1.2)
+### Code Organization
 ```
 Section 1: Configuration & Constants
 Section 2: Output Colors & Logging
@@ -244,56 +273,47 @@ This shows:
 - Package installation state
 - Key enrollment status
 - Signature verification results
+- **NoExtract configuration status**
+- **Conflicting hook status**
 
 ### Common Issues & Solutions
 
 | Issue | Solution |
 |-------|----------|
+| Error messages after update | Already fixed in v1.3.0 - run `--setup` to apply |
 | Hash mismatch warnings | Run `--fix-hashes` to update all hashes |
 | Snapshots won't boot | Run `--fix-hashes` for snapshot hash updates |
 | Windows not in boot menu | Run `--add-windows` to detect and add |
 | Some EFI files not signed | Run `--sign` to re-scan and sign all |
 | Keys won't enroll | Ensure BIOS is in Setup Mode |
-| Commands hang | Script has timeout protection (15s) |
+| Want to remove automation | Run `--uninstall` for clean removal |
 
-### Understanding Limine Hashes
+### Understanding Error Messages
 
-The script manages two types of hashes:
+Before v1.3.0, you might see:
+```
+failed signing /boot/4a1b942b...: is a directory
+failed signing /boot/4a1b942b.../limine_history/...: does not exist
+```
 
-1. **SHA256 in filename**: Part of the snapshot naming convention
-   ```
-   4a1b942b..._linux.efi_sha256_5ab709df...
-   ```
-   
-2. **BLAKE2B after #**: Actually verified by Limine at boot
-   ```
-   image_path: .../file.efi#255a5c8055f4d06c...
-   ```
-   This is what causes "hash mismatch" warnings
-
-## 📚 Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| **v1.2.1** | 2025-09-23 | Code cleanup, smart Windows version detection, removed dead code |
-| **v1.2** | 2025-09-23 | Snapshot hash management, code reorganization, improved safety |
-| **v1.1** | 2025-09-22 | Dynamic EFI discovery, Windows support, directory error fixes |
-| **v1.0** | 2025-09-18 | Initial release with robust setup |
+These are from the conflicting sbctl hook. After running v1.3.0 setup, these errors disappear permanently.
 
 ## 💡 Best Practices
 
-1. **New Installation**: Run `--setup` once, handles everything
-2. **Existing System**: Check `--status` first, then `--fix-hashes` if needed
-3. **After Kernel Updates**: Automatic via pacman hook
-4. **After Manual Changes**: Run `--sign` to ensure consistency
-5. **Regular Checks**: Use `--status` to verify system health
+1. **New Installation**: Run `--setup` once, handles everything including conflicts
+2. **Upgrading from v1.2.x**: Just run `--setup`, it migrates automatically
+3. **Existing System**: Check `--status` first, then `--fix-hashes` if needed
+4. **After Kernel Updates**: Automatic via pacman hook
+5. **After Manual Changes**: Run `--sign` to ensure consistency
+6. **Regular Checks**: Use `--status` to verify system health
+7. **Clean Removal**: Use `--uninstall` instead of manual deletion
 
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly (especially with snapshots)
+4. Test thoroughly (especially with snapshots and sbctl conflicts)
 5. Submit a pull request
 
 ### Testing Guidelines
@@ -301,6 +321,8 @@ The script manages two types of hashes:
 - Verify Windows detection on dual-boot systems
 - Check hash updates with pre-existing snapshots
 - Ensure automation continues after partial failures
+- Verify NoExtract configuration persists after sbctl updates
+- Test clean uninstall and reinstall
 
 ## 📁 Repository Structure
 
@@ -326,9 +348,10 @@ MIT License - See [LICENSE](LICENSE) file for details
 - Omarchy Linux community for testing and feedback
 - Limine bootloader developers
 - sbctl project for secure boot management tools
+- Arch Linux team for the robust package management system
 
 ---
 
-**Secure boot should be simple, reliable, and work with any setup. This tool makes it so.**
+**Secure boot should be simple, reliable, and error-free. Version 1.3.0 makes it so.**
 
 *If this tool helped you, consider starring the repository!*

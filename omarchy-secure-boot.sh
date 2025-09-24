@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-# Omarchy Secure Boot Manager v1.2
+# Omarchy Secure Boot Manager v1.3.0
 # Complete secure boot automation for Limine + UKI with snapshot support
 # Repository: https://github.com/peregrinus879/omarchy-secure-boot-manager
 # ============================================================================
@@ -12,14 +12,17 @@ set -euo pipefail
 # ============================================================================
 
 # Script metadata
-readonly VERSION="1.2.1"
+readonly VERSION="1.3.0"
 readonly SCRIPT_NAME="omarchy-secure-boot.sh"
 
 # System paths
 readonly LIMINE_CONF="/boot/limine.conf"
 readonly MACHINE_ID_FILE="/etc/machine-id"
 readonly INSTALL_PATH="/usr/local/bin/$SCRIPT_NAME"
-readonly HOOK_PATH="/etc/pacman.d/hooks/99-omarchy-secure-boot.hook"
+readonly HOOK_PATH="/etc/pacman.d/hooks/zz-omarchy-secure-boot.hook"
+readonly OLD_HOOK_PATH="/etc/pacman.d/hooks/99-omarchy-secure-boot.hook"
+readonly SBCTL_HOOK="/usr/share/libalpm/hooks/zz-sbctl.hook"
+readonly PACMAN_CONF="/etc/pacman.conf"
 
 # Required packages for secure boot
 readonly -a SB_PACKAGES=(
@@ -365,6 +368,89 @@ verify_signatures() {
 # SECTION 6: INSTALLATION & SETUP FUNCTIONS
 # ============================================================================
 
+# Configure pacman to never extract problematic sbctl hook
+configure_pacman_noextract() {
+  local noextract_entry="usr/share/libalpm/hooks/zz-sbctl.hook"
+
+  # Check if already configured
+  if grep -q "NoExtract.*${noextract_entry}" "$PACMAN_CONF" 2>/dev/null; then
+    log_info "Pacman already configured to skip sbctl hook"
+    return 0
+  fi
+
+  log_info "Configuring pacman to prevent sbctl hook installation..."
+
+  # Create backup with timestamp
+  local backup_file="${PACMAN_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
+  if ! sudo cp "$PACMAN_CONF" "$backup_file"; then
+    log_error "Failed to backup pacman.conf"
+    return 1
+  fi
+  log_info "Backup created: $backup_file"
+
+  # Check current NoExtract configuration
+  local has_noextract
+  has_noextract=$(grep -n "^NoExtract" "$PACMAN_CONF" 2>/dev/null || echo "")
+
+  if [[ -n "$has_noextract" ]]; then
+    # NoExtract exists - append to it if not already there
+    local line_num
+    line_num=$(echo "$has_noextract" | head -1 | cut -d: -f1)
+
+    # Check if our entry is already in the line
+    if ! grep "^NoExtract" "$PACMAN_CONF" | grep -q "$noextract_entry"; then
+      # Append to existing NoExtract line
+      sudo sed -i "${line_num}s|$| ${noextract_entry}|" "$PACMAN_CONF"
+      log_success "Added sbctl hook to existing NoExtract configuration"
+    fi
+  else
+    # NoExtract doesn't exist - add it after [options]
+    local options_line
+    options_line=$(grep -n "^\[options\]" "$PACMAN_CONF" | head -1 | cut -d: -f1)
+
+    if [[ -n "$options_line" ]]; then
+      # Insert NoExtract after [options]
+      sudo sed -i "${options_line}a NoExtract = ${noextract_entry}" "$PACMAN_CONF"
+      log_success "Created NoExtract configuration for sbctl hook"
+    else
+      log_error "Could not find [options] section in pacman.conf"
+      log_info "Please manually add to pacman.conf: NoExtract = ${noextract_entry}"
+      return 1
+    fi
+  fi
+
+  # Verify the change was made
+  if grep -q "NoExtract.*${noextract_entry}" "$PACMAN_CONF"; then
+    log_success "Pacman configuration updated successfully"
+    return 0
+  else
+    log_error "Failed to update pacman configuration"
+    return 1
+  fi
+}
+
+# Remove NoExtract configuration (for uninstall)
+remove_pacman_noextract() {
+  local noextract_entry="usr/share/libalpm/hooks/zz-sbctl.hook"
+
+  if ! grep -q "$noextract_entry" "$PACMAN_CONF" 2>/dev/null; then
+    return 0 # Nothing to remove
+  fi
+
+  log_info "Removing NoExtract configuration..."
+
+  # Backup before changes
+  sudo cp "$PACMAN_CONF" "${PACMAN_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
+
+  # Remove our specific entry
+  sudo sed -i "s| *${noextract_entry}||g" "$PACMAN_CONF"
+
+  # Clean up empty NoExtract lines
+  sudo sed -i '/^NoExtract[[:space:]]*=[[:space:]]*$/d' "$PACMAN_CONF"
+
+  log_success "NoExtract configuration removed"
+}
+
 # Install required packages
 install_packages() {
   log_step "Installing Secure Boot Packages"
@@ -396,21 +482,32 @@ install_automation() {
     sudo rm -f "$INSTALL_PATH"
   fi
 
-  if [[ -f "$HOOK_PATH" ]]; then
-    log_info "Removing existing hook..."
-    sudo rm -f "$HOOK_PATH"
-  fi
+  # Remove both old and current hooks
+  for hook in "$HOOK_PATH" "$OLD_HOOK_PATH"; do
+    if [[ -f "$hook" ]]; then
+      log_info "Removing existing hook: $(basename "$hook")"
+      sudo rm -f "$hook"
+    fi
+  done
 
   # Install fresh script
   log_info "Installing script to $INSTALL_PATH"
-  sudo cp "$0" "$INSTALL_PATH"
-  sudo chmod +x "$INSTALL_PATH"
+  if ! sudo cp "$0" "$INSTALL_PATH"; then
+    log_error "Failed to copy script"
+    return 1
+  fi
 
-  # Create and install fresh hook
+  if ! sudo chmod +x "$INSTALL_PATH"; then
+    log_error "Failed to make script executable"
+    return 1
+  fi
+
+  # Create and install fresh hook with zz- prefix
   log_info "Creating pacman hook at $HOOK_PATH"
-  sudo tee "$HOOK_PATH" >/dev/null <<'HOOK_EOF'
+  if ! sudo tee "$HOOK_PATH" >/dev/null <<'HOOK_EOF'; then
 # Omarchy Secure Boot Hook
 # Automatically maintains EFI signatures after package updates
+# This replaces the default sbctl hook functionality with Omarchy-aware signing
 
 [Trigger]
 Operation = Install
@@ -424,14 +521,40 @@ When = PostTransaction
 Exec = /usr/local/bin/omarchy-secure-boot.sh --update
 Depends = sbctl
 HOOK_EOF
+    log_error "Failed to create hook"
+    return 1
+  fi
+
+  # Configure pacman to prevent sbctl hook installation/reinstallation
+  if ! configure_pacman_noextract; then
+    log_warning "Could not configure pacman.conf automatically"
+    log_info "The sbctl hook may reappear after sbctl updates"
+  fi
+
+  # Remove existing sbctl hook if present
+  if [[ -f "$SBCTL_HOOK" ]]; then
+    log_info "Removing incompatible sbctl hook..."
+    if sudo rm -f "$SBCTL_HOOK"; then
+      log_success "Removed sbctl hook - it won't return due to NoExtract"
+    else
+      log_warning "Could not remove sbctl hook - may cause error messages"
+    fi
+  fi
 
   # Verify installation
   if [[ -f "$INSTALL_PATH" ]] && [[ -x "$INSTALL_PATH" ]] && [[ -f "$HOOK_PATH" ]]; then
     log_success "Automation installed successfully"
     log_info "System will now automatically maintain secure boot after package updates"
+
+    # Check if NoExtract was configured
+    if grep -q "NoExtract.*zz-sbctl.hook" "$PACMAN_CONF" 2>/dev/null; then
+      log_info "The problematic sbctl hook is permanently neutralized"
+    fi
+
+    return 0
   else
-    log_error "Failed to install automation properly"
-    exit 1
+    log_error "Installation verification failed"
+    return 1
   fi
 }
 
@@ -942,14 +1065,11 @@ cmd_update() {
     fi
   fi
 
-  local files_signed=false
   local hash_updated=false
   local verification_passed=false
 
   # Sign files if needed
-  if sign_files; then
-    files_signed=true
-  fi
+  sign_files
 
   # Update hash if needed (current kernel only during automated updates)
   if update_hash; then
@@ -962,7 +1082,7 @@ cmd_update() {
   fi
 
   # Report results
-  if [[ "$files_signed" = true ]] || [[ "$hash_updated" = true ]]; then
+  if [[ "$hash_updated" = true ]]; then
     if [[ "$verification_passed" = true ]]; then
       log_success "Maintenance complete - all signatures verified"
     else
@@ -1053,6 +1173,13 @@ cmd_status() {
     fi
   fi
 
+  # Check NoExtract configuration
+  if grep -q "NoExtract.*zz-sbctl.hook" "$PACMAN_CONF" 2>/dev/null; then
+    log_success "Conflicting sbctl hook permanently disabled"
+  elif [[ -f "$SBCTL_HOOK" ]]; then
+    log_warning "Conflicting sbctl hook present (may cause errors)"
+  fi
+
   # Check Windows entry
   if grep -qi "windows\|bootmgfw" "$LIMINE_CONF" 2>/dev/null; then
     log_success "Windows boot entry configured"
@@ -1109,6 +1236,71 @@ cmd_add_windows() {
   ensure_windows_entry
 }
 
+# Clean uninstall command
+cmd_uninstall() {
+  log_step "Uninstalling Omarchy Secure Boot Manager"
+
+  echo "This will remove:"
+  echo "  - The automation script from $INSTALL_PATH"
+  echo "  - The pacman hook from $HOOK_PATH"
+  echo "  - NoExtract configuration from pacman.conf"
+  echo ""
+  echo "This will NOT remove:"
+  echo "  - Your secure boot keys"
+  echo "  - Any EFI signatures"
+  echo "  - Limine configuration changes"
+  echo ""
+  read -p "Continue with uninstall? (y/N): " confirm_uninstall
+
+  if [[ ! $confirm_uninstall =~ ^[Yy]$ ]]; then
+    log_info "Uninstall cancelled"
+    return 0
+  fi
+
+  require_auth
+
+  local removed_items=0
+
+  # Remove script
+  if [[ -f "$INSTALL_PATH" ]]; then
+    if sudo rm -f "$INSTALL_PATH"; then
+      log_success "Removed script"
+      removed_items=$((removed_items + 1))
+    else
+      log_error "Failed to remove script"
+    fi
+  else
+    log_info "Script not found (already removed?)"
+  fi
+
+  # Remove hooks
+  for hook in "$HOOK_PATH" "$OLD_HOOK_PATH"; do
+    if [[ -f "$hook" ]]; then
+      if sudo rm -f "$hook"; then
+        log_success "Removed hook: $(basename "$hook")"
+        removed_items=$((removed_items + 1))
+      else
+        log_error "Failed to remove hook: $(basename "$hook")"
+      fi
+    fi
+  done
+
+  # Remove NoExtract configuration
+  if grep -q "NoExtract.*zz-sbctl.hook" "$PACMAN_CONF" 2>/dev/null; then
+    remove_pacman_noextract
+    removed_items=$((removed_items + 1))
+  fi
+
+  if [[ $removed_items -gt 0 ]]; then
+    log_success "Uninstall complete ($removed_items items removed)"
+    echo ""
+    log_warning "Note: The sbctl hook may be reinstalled on next sbctl update"
+    log_info "Your secure boot keys and signatures remain intact"
+  else
+    log_info "Nothing to uninstall"
+  fi
+}
+
 # ============================================================================
 # SECTION 9: HELP & MAIN EXECUTION
 # ============================================================================
@@ -1132,7 +1324,8 @@ show_usage() {
   echo "  --fix-hashes   Fix all hash mismatches (current + snapshots)"
   echo "  --status       Show secure boot status and verification"
   echo ""
-  echo -e "${BOLD}HELP:${NC}"
+  echo -e "${BOLD}MANAGEMENT:${NC}"
+  echo "  --uninstall    Remove automation (keeps keys and signatures)"
   echo "  --help         Show this help message"
   echo ""
   echo -e "${BOLD}TYPICAL WORKFLOW:${NC}"
@@ -1141,17 +1334,12 @@ show_usage() {
   echo "  3. $0 --enroll"
   echo "  4. Reboot → BIOS → Enable Secure Boot"
   echo ""
-  echo -e "${BOLD}KEY FEATURES:${NC}"
+  echo -e "${BOLD}KEY FEATURES v${VERSION}:${NC}"
+  echo "  • Neutralizes conflicting sbctl hook permanently"
   echo "  • Robust setup that always installs automation"
   echo "  • Snapshot hash management for complex naming schemes"
-  echo "  • Dynamic EFI file discovery and signing"
-  echo "  • Windows dual-boot detection and configuration"
-  echo "  • Automatic maintenance via pacman hooks"
-  echo "  • Safety features with backups and confirmations"
-  echo ""
-  echo -e "${BOLD}NOTE:${NC} After setup, maintenance is automatic via pacman hooks."
-  echo "      Use --status to check system state anytime."
-  echo "      Use --fix-hashes if you have boot warnings about hash mismatches."
+  echo "  • Clean uninstall option that preserves security"
+  echo "  • Safety backups before all configuration changes"
   echo ""
 }
 
@@ -1178,6 +1366,9 @@ main() {
     ;;
   --add-windows)
     cmd_add_windows
+    ;;
+  --uninstall)
+    cmd_uninstall
     ;;
   --help | -h | "")
     show_usage
