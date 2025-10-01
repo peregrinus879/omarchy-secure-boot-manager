@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-# Omarchy Secure Boot Manager v1.3.0
+# Omarchy Secure Boot Manager v1.3.1
 # Complete secure boot automation for Limine + UKI with snapshot support
 # Repository: https://github.com/peregrinus879/omarchy-secure-boot-manager
 # ============================================================================
@@ -12,7 +12,7 @@ set -euo pipefail
 # ============================================================================
 
 # Script metadata
-readonly VERSION="1.3.0"
+readonly VERSION="1.3.1"
 readonly SCRIPT_NAME="omarchy-secure-boot.sh"
 
 # System paths
@@ -121,8 +121,15 @@ extract_sha256_from_filename() {
   return 1
 }
 
+# Get relative path for EFI file display
+get_relative_efi_path() {
+  local file="$1"
+  local relpath="${file#/boot/}"
+  echo "$relpath"
+}
+
 # ============================================================================
-# SECTION 4: DISCOVERY FUNCTIONS - Finding files and systems
+# SECTION 4: DISCOVERY FUNCTIONS
 # ============================================================================
 
 # Find all Linux-related EFI files dynamically
@@ -130,14 +137,13 @@ find_linux_efi_files() {
   local -a efi_files=()
   local file
 
-  # Search for all .efi files in /boot, excluding Windows-related ones
   while IFS= read -r file; do
     # Skip Windows-related files
     if [[ "$file" =~ [Mm]icrosoft|[Ww]indows|bootmgfw ]]; then
       continue
     fi
 
-    # Triple-check: it's a regular file, not a directory or symlink
+    # Verify it's a regular file
     if [[ -f "$file" ]] && [[ ! -d "$file" ]]; then
       efi_files+=("$file")
     fi
@@ -227,8 +233,6 @@ check_keys() {
 
 # Check for hash mismatches in current kernel and snapshots
 check_hash_mismatches() {
-  log_step "Checking for Hash Mismatches"
-
   local mismatches=0
   local total=0
 
@@ -256,22 +260,17 @@ check_hash_mismatches() {
         echo -e "  File   : $uki_filename"
         echo -e "  Config : ${config_hash:0:32}..."
         echo -e "  Actual : ${actual_hash:0:32}..."
-      else
-        log_success "Current kernel: hash OK"
       fi
     fi
   fi
 
-  # Check snapshots - must look in limine_history directories
+  # Check snapshots
   while IFS= read -r line; do
     if [[ "$line" =~ image_path:.*limine_history/([^#]+) ]]; then
       local snapshot_filename="${BASH_REMATCH[1]%%#*}"
-
-      # Extract SHA256 for exact matching
       local sha256_part
       sha256_part=$(extract_sha256_from_filename "$snapshot_filename") || continue
 
-      # Find the exact snapshot file
       local efi_path
       efi_path=$(find /boot -type f -path "*/limine_history/*_sha256_${sha256_part}" 2>/dev/null | head -1)
 
@@ -295,9 +294,10 @@ check_hash_mismatches() {
     fi
   done < <(grep "limine_history" "$LIMINE_CONF")
 
-  echo ""
-  if [[ $mismatches -eq 0 ]]; then
+  if [[ $mismatches -eq 0 ]] && [[ $total -gt 0 ]]; then
     log_success "All $total UKI hashes match correctly"
+  elif [[ $total -eq 0 ]]; then
+    log_info "No UKI files found to check"
   else
     log_warning "$mismatches hash mismatch(es) found out of $total UKIs"
     log_info "Run '$SCRIPT_NAME --fix-hashes' to correct them"
@@ -306,52 +306,41 @@ check_hash_mismatches() {
   return $mismatches
 }
 
-# Verify EFI file signatures
+# Verify EFI file signatures (quiet mode for hooks)
 verify_signatures() {
+  local quiet_mode="${1:-false}"
   local -a efi_files
   mapfile -t efi_files < <(find_linux_efi_files)
 
   local all_verified=true
-  local verification_output=""
   local snapshot_count=0
   local current_count=0
 
-  # Verify each file individually
   for file in "${efi_files[@]}"; do
     if [[ -f "$file" ]]; then
-      local filename=$(basename "$file")
-      local dir_hint=""
+      local relpath=$(get_relative_efi_path "$file")
 
       # Categorize file type
       if [[ "$file" =~ limine_history ]]; then
-        dir_hint=" (snapshot)"
         snapshot_count=$((snapshot_count + 1))
-      elif [[ "$filename" == "BOOTX64.EFI" ]]; then
-        if [[ "$file" =~ /limine/ ]]; then
-          dir_hint=" (limine)"
-        elif [[ "$file" =~ /BOOT/ ]]; then
-          dir_hint=" (BOOT)"
-        fi
-      elif [[ "$filename" =~ _linux\.efi$ ]] && [[ ! "$file" =~ limine_history ]]; then
-        dir_hint=" (current)"
+      elif [[ "$relpath" =~ _linux\.efi$ ]] && [[ ! "$file" =~ limine_history ]]; then
         current_count=$((current_count + 1))
       fi
 
-      if timeout "$TIMEOUT_DURATION" sudo sbctl verify "$file" >/dev/null 2>&1; then
-        verification_output+="✓ ${filename}${dir_hint}\n"
-      else
-        verification_output+="✗ ${filename}${dir_hint}\n"
+      if ! timeout "$TIMEOUT_DURATION" sudo sbctl verify "$file" >/dev/null 2>&1; then
         all_verified=false
+        if [[ "$quiet_mode" != "true" ]]; then
+          echo "✗ $relpath"
+        fi
+      else
+        if [[ "$quiet_mode" != "true" ]]; then
+          echo "✓ $relpath"
+        fi
       fi
     fi
   done
 
-  if [[ -n "$verification_output" ]]; then
-    echo -e "$verification_output"
-  fi
-
-  # Summary
-  if [[ $snapshot_count -gt 0 ]]; then
+  if [[ $snapshot_count -gt 0 ]] && [[ "$quiet_mode" != "true" ]]; then
     log_info "Verified $snapshot_count snapshot(s) and $current_count current kernel(s)"
   fi
 
@@ -372,7 +361,6 @@ verify_signatures() {
 configure_pacman_noextract() {
   local noextract_entry="usr/share/libalpm/hooks/zz-sbctl.hook"
 
-  # Check if already configured
   if grep -q "NoExtract.*${noextract_entry}" "$PACMAN_CONF" 2>/dev/null; then
     log_info "Pacman already configured to skip sbctl hook"
     return 0
@@ -380,7 +368,6 @@ configure_pacman_noextract() {
 
   log_info "Configuring pacman to prevent sbctl hook installation..."
 
-  # Create backup with timestamp
   local backup_file="${PACMAN_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
   if ! sudo cp "$PACMAN_CONF" "$backup_file"; then
     log_error "Failed to backup pacman.conf"
@@ -388,28 +375,22 @@ configure_pacman_noextract() {
   fi
   log_info "Backup created: $backup_file"
 
-  # Check current NoExtract configuration
   local has_noextract
   has_noextract=$(grep -n "^NoExtract" "$PACMAN_CONF" 2>/dev/null || echo "")
 
   if [[ -n "$has_noextract" ]]; then
-    # NoExtract exists - append to it if not already there
     local line_num
     line_num=$(echo "$has_noextract" | head -1 | cut -d: -f1)
 
-    # Check if our entry is already in the line
     if ! grep "^NoExtract" "$PACMAN_CONF" | grep -q "$noextract_entry"; then
-      # Append to existing NoExtract line
       sudo sed -i "${line_num}s|$| ${noextract_entry}|" "$PACMAN_CONF"
       log_success "Added sbctl hook to existing NoExtract configuration"
     fi
   else
-    # NoExtract doesn't exist - add it after [options]
     local options_line
     options_line=$(grep -n "^\[options\]" "$PACMAN_CONF" | head -1 | cut -d: -f1)
 
     if [[ -n "$options_line" ]]; then
-      # Insert NoExtract after [options]
       sudo sed -i "${options_line}a NoExtract = ${noextract_entry}" "$PACMAN_CONF"
       log_success "Created NoExtract configuration for sbctl hook"
     else
@@ -419,7 +400,6 @@ configure_pacman_noextract() {
     fi
   fi
 
-  # Verify the change was made
   if grep -q "NoExtract.*${noextract_entry}" "$PACMAN_CONF"; then
     log_success "Pacman configuration updated successfully"
     return 0
@@ -434,18 +414,13 @@ remove_pacman_noextract() {
   local noextract_entry="usr/share/libalpm/hooks/zz-sbctl.hook"
 
   if ! grep -q "$noextract_entry" "$PACMAN_CONF" 2>/dev/null; then
-    return 0 # Nothing to remove
+    return 0
   fi
 
   log_info "Removing NoExtract configuration..."
 
-  # Backup before changes
   sudo cp "$PACMAN_CONF" "${PACMAN_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
-
-  # Remove our specific entry
   sudo sed -i "s| *${noextract_entry}||g" "$PACMAN_CONF"
-
-  # Clean up empty NoExtract lines
   sudo sed -i '/^NoExtract[[:space:]]*=[[:space:]]*$/d' "$PACMAN_CONF"
 
   log_success "NoExtract configuration removed"
@@ -476,13 +451,12 @@ install_packages() {
 install_automation() {
   log_step "Installing Automation"
 
-  # Clean install - remove any existing files first
+  # Clean install - remove existing files
   if [[ -f "$INSTALL_PATH" ]]; then
     log_info "Removing existing script..."
     sudo rm -f "$INSTALL_PATH"
   fi
 
-  # Remove both old and current hooks
   for hook in "$HOOK_PATH" "$OLD_HOOK_PATH"; do
     if [[ -f "$hook" ]]; then
       log_info "Removing existing hook: $(basename "$hook")"
@@ -502,7 +476,7 @@ install_automation() {
     return 1
   fi
 
-  # Create and install fresh hook with zz- prefix
+  # Create pacman hook
   log_info "Creating pacman hook at $HOOK_PATH"
   if ! sudo tee "$HOOK_PATH" >/dev/null <<'HOOK_EOF'; then
 # Omarchy Secure Boot Hook
@@ -525,13 +499,13 @@ HOOK_EOF
     return 1
   fi
 
-  # Configure pacman to prevent sbctl hook installation/reinstallation
+  # Configure pacman NoExtract
   if ! configure_pacman_noextract; then
     log_warning "Could not configure pacman.conf automatically"
     log_info "The sbctl hook may reappear after sbctl updates"
   fi
 
-  # Remove existing sbctl hook if present
+  # Remove existing sbctl hook
   if [[ -f "$SBCTL_HOOK" ]]; then
     log_info "Removing incompatible sbctl hook..."
     if sudo rm -f "$SBCTL_HOOK"; then
@@ -546,7 +520,6 @@ HOOK_EOF
     log_success "Automation installed successfully"
     log_info "System will now automatically maintain secure boot after package updates"
 
-    # Check if NoExtract was configured
     if grep -q "NoExtract.*zz-sbctl.hook" "$PACMAN_CONF" 2>/dev/null; then
       log_info "The problematic sbctl hook is permanently neutralized"
     fi
@@ -602,7 +575,6 @@ show_enrollment_instructions() {
   echo ""
   echo -e "${YELLOW}=============================================${NC}"
 
-  # Create helper script for convenience
   cat >/tmp/omarchy-sb-enroll.sh <<'ENROLL_EOF'
 #!/bin/bash
 echo "🔐 Enrolling Omarchy secure boot keys..."
@@ -621,15 +593,11 @@ ENROLL_EOF
 }
 
 # ============================================================================
-# SECTION 7: CORE OPERATIONS - Signing and hash management
+# SECTION 7: CORE OPERATIONS
 # ============================================================================
 
 # Sign all Linux EFI files
 sign_files() {
-  local machine_id
-  machine_id=$(get_machine_id)
-
-  # Get all Linux-related EFI files dynamically
   local -a efi_files
   mapfile -t efi_files < <(find_linux_efi_files)
 
@@ -640,20 +608,19 @@ sign_files() {
 
   log_info "Found ${#efi_files[@]} Linux EFI files to process"
 
-  # Sign files that need signing
   local needs_signing=false
   for file in "${efi_files[@]}"; do
-    # Triple-check: it's a file, not a directory, and exists
     if [[ ! -f "$file" ]] || [[ -d "$file" ]]; then
       continue
     fi
 
-    log_info "Checking $(basename "$file")"
-    if sbctl verify "$file" >/dev/null 2>&1; then
-      echo -e "    ${GREEN}[ok]${NC} already signed"
+    local relpath=$(get_relative_efi_path "$file")
+    log_info "Checking $relpath"
+    if sudo sbctl verify "$file" >/dev/null 2>&1; then
+      echo "    ✓ already signed"
     else
-      echo -e "    ${YELLOW}[signing]${NC} $(basename "$file")"
-      sudo sbctl sign -s "$file"
+      echo "    → signing..."
+      sudo sbctl sign -s "$file" >/dev/null 2>&1
       needs_signing=true
     fi
   done
@@ -666,7 +633,6 @@ update_hash() {
   local machine_id
   machine_id=$(get_machine_id)
 
-  # Find the current UKI file (exclude snapshots)
   local uki_file
   uki_file=$(find /boot -type f -name "${machine_id}_linux.efi" 2>/dev/null | grep -v "limine_history" | head -1)
 
@@ -683,7 +649,6 @@ update_hash() {
   local uki_filename
   uki_filename=$(basename "$uki_file")
 
-  # Get current hash from config
   if grep -qE "${uki_filename}" "$LIMINE_CONF"; then
     current_hash=$(grep -E "${uki_filename}" "$LIMINE_CONF" | grep -v "limine_history" |
       sed -E 's/.*#([0-9a-f]{128})/\1/' 2>/dev/null | head -1)
@@ -706,7 +671,6 @@ update_single_snapshot_hash() {
   local snapshot_filename="$2"
   local sha256_part="$3"
 
-  # Find the exact snapshot file
   local efi_path
   efi_path=$(find /boot -type f -path "*/limine_history/*_sha256_${sha256_part}" 2>/dev/null | head -1)
 
@@ -718,11 +682,9 @@ update_single_snapshot_hash() {
   local new_hash
   new_hash=$(b2sum "$efi_path" | awk '{print $1}')
 
-  # Escape filename for sed
   local escaped_filename
   escaped_filename=$(echo "$snapshot_filename" | sed 's/[[\.*^$()+?{|]/\\&/g')
 
-  # Update the specific line
   if sudo sed -i "${line_num}s|\(image_path:.*${escaped_filename}\)\(#[a-f0-9]*\)\?|\1#${new_hash}|" "$LIMINE_CONF"; then
     log_success "Updated line $line_num: SHA256 ${sha256_part:0:16}..."
     return 0
@@ -739,19 +701,14 @@ update_snapshot_hashes() {
   local updated=0
   local checked=0
   local needs_update=0
-
-  # First pass: check which snapshots need updating
   local -a updates_needed=()
 
   while IFS=: read -r line_num line_content; do
     if [[ "$line_content" =~ image_path:.*limine_history/([^#]+) ]]; then
       local snapshot_filename="${BASH_REMATCH[1]%%#*}"
-
-      # Extract SHA256 for exact matching
       local sha256_part
       sha256_part=$(extract_sha256_from_filename "$snapshot_filename") || continue
 
-      # Find the exact snapshot file
       local efi_path
       efi_path=$(find /boot -type f -path "*/limine_history/*_sha256_${sha256_part}" 2>/dev/null | head -1)
 
@@ -760,7 +717,6 @@ update_snapshot_hashes() {
         local actual_hash
         actual_hash=$(b2sum "$efi_path" | awk '{print $1}')
 
-        # Extract current hash from config
         local config_hash=""
         if [[ "$line_content" =~ \#([a-f0-9]{128}) ]]; then
           config_hash="${BASH_REMATCH[1]}"
@@ -784,7 +740,6 @@ update_snapshot_hashes() {
     return 0
   fi
 
-  # Ask for confirmation before updating
   echo ""
   log_warning "Found $needs_update snapshot(s) with incorrect hashes out of $checked checked"
 
@@ -797,10 +752,8 @@ update_snapshot_hashes() {
     fi
   fi
 
-  # Backup before making changes
   backup_limine_conf
 
-  # Second pass: perform updates
   log_info "Updating snapshot hashes..."
 
   for update_entry in "${updates_needed[@]}"; do
@@ -822,16 +775,10 @@ detect_windows_version() {
   local windows_path="$1"
   local windows_version="Microsoft Windows"
 
-  # Check for version clues in partition labels
-  local partition_info
-  partition_info=$(df "$windows_path" 2>/dev/null | tail -1)
-
-  # Check common indicators
   if lsblk -o LABEL 2>/dev/null | grep -qi "windows.*11\|win.*11"; then
     windows_version="Microsoft Windows 11"
   elif lsblk -o LABEL 2>/dev/null | grep -qi "windows.*10\|win.*10"; then
     windows_version="Microsoft Windows 10"
-  # Check if BCD store or other Windows 11 specific files exist
   elif find "$(dirname "$windows_path")" -name "*.mui" 2>/dev/null | grep -qi "windows.ui\|winui"; then
     windows_version="Microsoft Windows 11"
   fi
@@ -843,13 +790,11 @@ detect_windows_version() {
 ensure_windows_entry() {
   log_step "Checking for Windows Boot Entry"
 
-  # Check if Windows entry already exists
   if grep -qi "windows\|bootmgfw" "$LIMINE_CONF" 2>/dev/null; then
     log_success "Windows entry already exists in limine.conf"
     return 0
   fi
 
-  # Find Windows Boot Manager
   local windows_path
   windows_path=$(find_windows_bootmgr)
 
@@ -860,12 +805,10 @@ ensure_windows_entry() {
 
   log_info "Found Windows Boot Manager at: $windows_path"
 
-  # Detect Windows version
   local windows_version
   windows_version=$(detect_windows_version "$windows_path")
   log_info "Detected: $windows_version"
 
-  # Convert absolute path to relative EFI path
   local efi_path
   if [[ "$windows_path" =~ /boot/(.*) ]]; then
     efi_path="${BASH_REMATCH[1]}"
@@ -875,7 +818,6 @@ ensure_windows_entry() {
     efi_path="$windows_path"
   fi
 
-  # Create Windows entry
   local windows_entry="
 # Windows Boot Manager
 /Windows
@@ -884,7 +826,6 @@ ensure_windows_entry() {
     protocol: efi_chainload
     image_path: boot():/${efi_path}"
 
-  # Ask for confirmation before adding
   echo ""
   echo "The following entry will be added to limine.conf:"
   echo -e "${CYAN}$windows_entry${NC}"
@@ -892,10 +833,7 @@ ensure_windows_entry() {
   read -p "Add Windows entry to boot menu? (y/N): " add_windows
 
   if [[ $add_windows =~ ^[Yy]$ ]]; then
-    # Backup limine.conf
     backup_limine_conf
-
-    # Add entry to limine.conf
     echo "$windows_entry" | sudo tee -a "$LIMINE_CONF" >/dev/null
     log_success "Windows entry added to limine.conf"
   else
@@ -913,63 +851,51 @@ cmd_setup() {
   echo "Setting up secure boot for your Omarchy system..."
   echo ""
 
-  # Check not running as root
   if [[ $EUID -eq 0 ]]; then
     log_error "Don't run setup as root. The script will use sudo when needed."
     exit 1
   fi
 
-  # Authenticate sudo upfront
   require_auth
 
-  # Step 1: Install packages (critical foundation)
   install_packages
-
-  # Step 2: ALWAYS install automation FIRST (before anything can fail/exit)
   install_automation
-
-  # Step 3: Create keys (optional - setup continues regardless)
   create_keys
 
-  # Step 4: Always run initial signing and verification
   log_step "Initial EFI File Signing"
   if sign_files; then
     update_hash
-    # Check and offer to fix snapshot hashes if needed
-    if ! check_hash_mismatches >/dev/null 2>&1; then
-      log_info "Detected hash mismatches in snapshots"
-      update_snapshot_hashes
-    fi
   fi
+
+  log_step "Checking for Hash Mismatches"
+  if ! check_hash_mismatches; then
+    log_info "Run '$SCRIPT_NAME --fix-hashes' to correct mismatches"
+  fi
+
+  log_step "Verifying Signatures"
   verify_signatures
 
-  # Step 5: Check and add Windows entry if needed
   ensure_windows_entry
 
-  # Step 6: Smart completion messages based on actual state
   echo ""
   if check_keys; then
-    # Check if we're in Setup Mode (need enrollment) or keys are already enrolled
     local sb_status
     sb_status=$(timeout "$TIMEOUT_DURATION" sudo sbctl status 2>/dev/null || echo "")
 
     if echo "$sb_status" | grep -q "Setup Mode.*✓ Enabled\|Setup Mode.*Enabled"; then
-      # Setup Mode is ENABLED = need to enroll keys
       show_enrollment_instructions
       echo ""
       log_info "Next step: $SCRIPT_NAME --enroll"
     elif echo "$sb_status" | grep -q "Secure Boot.*✓ Enabled\|Secure Boot.*Enabled"; then
-      # Secure Boot is ENABLED = everything is working!
-      log_success "✅ Keys are enrolled and secure boot is fully operational!"
+      log_success "Keys are enrolled and secure boot is fully operational"
       log_info "System will automatically maintain secure boot from now on"
     else
-      # Can't determine status or secure boot is disabled
-      log_success "✅ Keys exist but secure boot may be disabled"
+      log_success "Keys exist but secure boot may be disabled"
       log_info "Enable Secure Boot in BIOS if not already enabled"
       log_info "Use '$SCRIPT_NAME --status' to check current state"
     fi
   else
-    log_warning "⚠️  No secure boot keys found"
+    log_warning "No secure boot keys found"
     log_info "Create keys manually: sudo sbctl create-keys"
     log_info "Then run: $SCRIPT_NAME --enroll"
   fi
@@ -990,7 +916,6 @@ cmd_enroll() {
     exit 1
   fi
 
-  # Check setup mode
   local sb_status
   sb_status=$(timeout "$TIMEOUT_DURATION" sudo sbctl status 2>/dev/null || echo "")
 
@@ -1057,7 +982,6 @@ cmd_update() {
 
   log_info "Starting secure boot maintenance..."
 
-  # For manual runs (not hook), authenticate upfront
   if [[ -t 0 ]]; then
     if ! sudo -v 2>/dev/null; then
       log_error "Failed to authenticate"
@@ -1068,16 +992,16 @@ cmd_update() {
   local hash_updated=false
   local verification_passed=false
 
-  # Sign files if needed
-  sign_files
+  # Sign files
+  sign_files || true
 
-  # Update hash if needed (current kernel only during automated updates)
+  # Update hash
   if update_hash; then
     hash_updated=true
   fi
 
-  # Always run verification
-  if verify_signatures; then
+  # Verify signatures (quiet mode for hook output)
+  if verify_signatures "true"; then
     verification_passed=true
   fi
 
@@ -1095,6 +1019,8 @@ cmd_update() {
       log_warning "No changes made but verification issues detected"
     fi
   fi
+
+  exit 0
 }
 
 # Manual signing command
@@ -1106,12 +1032,12 @@ cmd_sign() {
   sign_files
   update_hash
 
-  # Check and offer to fix snapshot hashes
-  if ! check_hash_mismatches >/dev/null 2>&1; then
-    update_snapshot_hashes
-  fi
+  log_step "Checking for Hash Mismatches"
+  check_hash_mismatches
 
+  log_step "Verifying Signatures"
   verify_signatures
+
   log_success "Manual signing complete"
 }
 
@@ -1121,19 +1047,17 @@ cmd_fix_hashes() {
 
   require_auth
 
-  # Fix current kernel hash
   local current_fixed=false
   if update_hash; then
     log_success "Fixed current kernel hash"
     current_fixed=true
   fi
 
-  # Fix snapshot hashes
   update_snapshot_hashes
 
-  # Verify final state
   echo ""
-  if check_hash_mismatches >/dev/null 2>&1; then
+  log_step "Verification"
+  if check_hash_mismatches; then
     log_success "All hash mismatches have been resolved!"
   else
     log_warning "Some hash mismatches may still remain - check --status for details"
@@ -1144,7 +1068,6 @@ cmd_fix_hashes() {
 cmd_status() {
   log_step "Secure Boot Status"
 
-  # Check packages
   if check_packages >/dev/null; then
     log_success "Required packages installed: ${SB_PACKAGES[*]}"
   else
@@ -1153,14 +1076,12 @@ cmd_status() {
     log_warning "Missing packages: ${missing_packages[*]}"
   fi
 
-  # Check keys
   if check_keys; then
     log_success "Secure boot keys exist"
   else
     log_warning "No secure boot keys found"
   fi
 
-  # Check automation
   if [[ -f "$INSTALL_PATH" ]] && [[ -f "$HOOK_PATH" ]]; then
     log_success "Automation installed and active"
   else
@@ -1173,14 +1094,12 @@ cmd_status() {
     fi
   fi
 
-  # Check NoExtract configuration
   if grep -q "NoExtract.*zz-sbctl.hook" "$PACMAN_CONF" 2>/dev/null; then
     log_success "Conflicting sbctl hook permanently disabled"
   elif [[ -f "$SBCTL_HOOK" ]]; then
     log_warning "Conflicting sbctl hook present (may cause errors)"
   fi
 
-  # Check Windows entry
   if grep -qi "windows\|bootmgfw" "$LIMINE_CONF" 2>/dev/null; then
     log_success "Windows boot entry configured"
   else
@@ -1191,36 +1110,35 @@ cmd_status() {
     fi
   fi
 
-  # List found EFI files
   echo ""
   log_info "Linux EFI files found:"
   local -a efi_files
   mapfile -t efi_files < <(find_linux_efi_files)
   local snapshot_count=0
   for file in "${efi_files[@]}"; do
+    local relpath=$(get_relative_efi_path "$file")
     if [[ "$file" =~ limine_history ]]; then
-      echo "  - $(basename "$file") (snapshot)"
+      echo "  - $relpath"
       snapshot_count=$((snapshot_count + 1))
     else
-      echo "  - $(basename "$file") ($(dirname "$file"))"
+      echo "  - $relpath"
     fi
   done
   if [[ $snapshot_count -gt 0 ]]; then
     log_info "Including $snapshot_count snapshot UKI(s)"
   fi
 
-  # Show sbctl status with timeout
   if command -v sbctl >/dev/null 2>&1; then
     echo ""
     log_info "Authenticating to check detailed status..."
     if sudo -v 2>/dev/null; then
       timeout "$TIMEOUT_DURATION" sudo sbctl status 2>/dev/null || log_warning "sbctl status timed out or failed"
+
       echo ""
-      log_info "Verifying EFI file signatures:"
+      log_step "Verifying EFI File Signatures"
       verify_signatures
 
-      # Check for hash mismatches
-      echo ""
+      log_step "Checking for Hash Mismatches"
       check_hash_mismatches
     else
       log_warning "Authentication failed - skipping detailed status"
@@ -1261,7 +1179,6 @@ cmd_uninstall() {
 
   local removed_items=0
 
-  # Remove script
   if [[ -f "$INSTALL_PATH" ]]; then
     if sudo rm -f "$INSTALL_PATH"; then
       log_success "Removed script"
@@ -1273,7 +1190,6 @@ cmd_uninstall() {
     log_info "Script not found (already removed?)"
   fi
 
-  # Remove hooks
   for hook in "$HOOK_PATH" "$OLD_HOOK_PATH"; do
     if [[ -f "$hook" ]]; then
       if sudo rm -f "$hook"; then
@@ -1285,7 +1201,6 @@ cmd_uninstall() {
     fi
   done
 
-  # Remove NoExtract configuration
   if grep -q "NoExtract.*zz-sbctl.hook" "$PACMAN_CONF" 2>/dev/null; then
     remove_pacman_noextract
     removed_items=$((removed_items + 1))
@@ -1335,11 +1250,11 @@ show_usage() {
   echo "  4. Reboot → BIOS → Enable Secure Boot"
   echo ""
   echo -e "${BOLD}KEY FEATURES v${VERSION}:${NC}"
+  echo "  • Fixed pacman hook exit status for clean updates"
   echo "  • Neutralizes conflicting sbctl hook permanently"
   echo "  • Robust setup that always installs automation"
   echo "  • Snapshot hash management for complex naming schemes"
   echo "  • Clean uninstall option that preserves security"
-  echo "  • Safety backups before all configuration changes"
   echo ""
 }
 
@@ -1386,5 +1301,4 @@ main() {
 # SCRIPT ENTRY POINT
 # ============================================================================
 
-# Execute main function with all arguments
 main "$@"

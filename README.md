@@ -5,9 +5,9 @@
 A robust, single-script solution that handles everything from initial setup to ongoing maintenance with comprehensive error handling and edge case support.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.3.0-brightgreen.svg)](https://github.com/peregrinus879/omarchy-secure-boot-manager)
+[![Version](https://img.shields.io/badge/version-1.3.1-brightgreen.svg)](https://github.com/peregrinus879/omarchy-secure-boot-manager)
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Clone and run
@@ -19,7 +19,17 @@ chmod +x omarchy-secure-boot.sh
 ./omarchy-secure-boot.sh --setup
 ```
 
-## ✨ Version History
+## Version History
+
+### v1.3.1 (2025-01-29)
+**The Polish Update** - Production-ready with refined output and perfect automation.
+
+- **Fixed Hook Exit Status**: Pacman hook now properly returns success status
+- **Improved Output Clarity**: Relative paths eliminate filename confusion
+- **Better Section Organization**: Clear headers for all verification steps
+- **Hash Verification Flow**: Properly displayed in all commands
+- **Quiet Mode for Hooks**: Concise output during automated updates
+- **Enhanced User Experience**: Clean, scannable output with consistent formatting
 
 ### v1.3.0 (2025-01-24)
 **The Conflict Resolution Update** - Permanently neutralizes the conflicting sbctl hook that causes errors with Omarchy's directory structure.
@@ -60,9 +70,9 @@ chmod +x omarchy-secure-boot.sh
 - **Automatic Maintenance**: Pacman hook for updates
 - **Basic Secure Boot**: Key creation and enrollment
 
-## 📋 What It Does
+## What It Does
 
-### 🔧 **Complete Setup**
+### Complete Setup
 - Installs required packages (`sbctl`, `efitools`, `sbsigntools`)
 - **Always installs automation first** - never gets stuck
 - Creates secure boot keys with clear BIOS guidance
@@ -71,7 +81,7 @@ chmod +x omarchy-secure-boot.sh
 - Detects and configures Windows dual-boot
 - **Permanently neutralizes conflicting sbctl hook**
 
-### ⚡ **Automatic Maintenance**  
+### Automatic Maintenance  
 - Signs ALL Linux EFI files after every package update
 - Updates BLAKE2B hashes in `limine.conf`
 - Correctly handles complex snapshot naming schemes
@@ -79,7 +89,7 @@ chmod +x omarchy-secure-boot.sh
 - Zero configuration needed after initial setup
 - **No more error messages from conflicting hooks**
 
-### 🛡️ **Self-Managing System**
+### Self-Managing System
 - Clean installation - removes old versions first
 - Installs itself to `/usr/local/bin/`
 - Creates pacman hook for automatic updates
@@ -87,7 +97,7 @@ chmod +x omarchy-secure-boot.sh
 - Comprehensive status reporting
 - **NoExtract configuration survives package updates**
 
-## 🎮 Commands
+## Commands
 
 | Command | Description |
 |---------|-------------|
@@ -98,10 +108,10 @@ chmod +x omarchy-secure-boot.sh
 | `--sign` | Manual signing with hash fixes |
 | `--add-windows` | Add Windows to boot menu |
 | `--update` | Maintenance (used by hook) |
-| `--uninstall` | **NEW** - Clean removal of automation (keeps keys/signatures) |
+| `--uninstall` | Clean removal of automation (keeps keys/signatures) |
 | `--help` | Show all commands |
 
-## 📝 Setup Process
+## Setup Process
 
 ### For New Systems
 
@@ -109,14 +119,14 @@ chmod +x omarchy-secure-boot.sh
    ```bash
    ./omarchy-secure-boot.sh --setup
    ```
-   - ✅ Installs packages
-   - ✅ Always installs automation (even if other steps fail)
-   - ✅ Creates keys (optional - setup continues if this fails)
-   - ✅ Signs ALL Linux EFI files including snapshots
-   - ✅ Fixes snapshot hash mismatches automatically
-   - ✅ Detects Windows and offers boot entry
-   - ✅ **Neutralizes conflicting sbctl hook permanently**
-   - ✅ Verifies everything with detailed reporting
+   - Installs packages
+   - Always installs automation (even if other steps fail)
+   - Creates keys (optional - setup continues if this fails)
+   - Signs ALL Linux EFI files including snapshots
+   - Fixes snapshot hash mismatches automatically
+   - Detects Windows and offers boot entry
+   - **Neutralizes conflicting sbctl hook permanently**
+   - Verifies everything with detailed reporting
    
 2. **BIOS Configuration** (if keys were created)
    - Reboot → Enter BIOS/UEFI setup
@@ -148,7 +158,7 @@ If you have snapshots created before setting up secure boot:
 ./omarchy-secure-boot.sh --fix-hashes
 ```
 
-This eliminates the need to press 'Y' when booting old snapshots!
+This eliminates the need to press 'Y' when booting old snapshots.
 
 ### For Dual-Boot Systems
 
@@ -167,7 +177,7 @@ This eliminates the need to press 'Y' when booting old snapshots!
 ./omarchy-secure-boot.sh --uninstall
 ```
 
-## ⭐ Key Features
+## Key Features
 
 | Feature | Description |
 |---------|-------------|
@@ -183,15 +193,15 @@ This eliminates the need to press 'Y' when booting old snapshots!
 | **Auto Backup** | Creates timestamped backups |
 | **Self-Installing** | Copies itself to system |
 | **Self-Maintaining** | Pacman hook automation |
-| **User-Friendly** | Colored output with clear instructions |
+| **Clean Output** | Professional, scannable formatting |
 
-## 🔬 Technical Details
+## Technical Details
 
-### The sbctl Hook Conflict (v1.3.0)
+### The sbctl Hook Conflict (v1.3.0+)
 The official `sbctl` package includes a hook that fails with Omarchy's directory structure:
 - Tries to sign directory `/boot/{machine-id}` as a file
 - Looks for snapshots in wrong locations
-- Generates scary error messages after every update
+- Generates error messages after every update
 
 Our solution:
 - Configures pacman's `NoExtract` to never install the problematic hook
@@ -206,6 +216,7 @@ The script handles complex snapshot naming where files don't end with `.efi` but
 # Your snapshots: filename.efi_sha256_[64-char-hash]
 ```
 
+Features:
 - Detects snapshots with incorrect hashes after signing
 - Shows detailed comparison of expected vs actual hashes
 - Interactive confirmation before bulk updates
@@ -217,7 +228,7 @@ The script handles complex snapshot naming where files don't end with `.efi` but
 - Scans `/boot` for all `.efi` files
 - Automatically excludes Windows-related files
 - No hardcoded paths - works with any installation
-- Triple-checks file types before operations
+- Shows clear relative paths to eliminate confusion
 - Individual file verification with status reporting
 
 ### Windows Boot Detection
@@ -252,7 +263,7 @@ Section 8: Command Implementations
 Section 9: Help & Main Execution
 ```
 
-## 📊 Requirements
+## Requirements
 
 - **Arch Linux** with Limine bootloader
 - **UKI (Unified Kernel Image)** setup  
@@ -260,14 +271,14 @@ Section 9: Help & Main Execution
 - **Administrative access** for system configuration
 - **Optional:** Windows installation for dual-boot
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Check Complete Status
 ```bash
 omarchy-secure-boot.sh --status
 ```
 This shows:
-- All discovered EFI files (current + snapshots)
+- All discovered EFI files (with clear relative paths)
 - Hash mismatch detection with details
 - Windows boot entry status
 - Package installation state
@@ -280,7 +291,7 @@ This shows:
 
 | Issue | Solution |
 |-------|----------|
-| Error messages after update | Already fixed in v1.3.0 - run `--setup` to apply |
+| Error messages after update | Already fixed in v1.3.0+ - run `--setup` to apply |
 | Hash mismatch warnings | Run `--fix-hashes` to update all hashes |
 | Snapshots won't boot | Run `--fix-hashes` for snapshot hash updates |
 | Windows not in boot menu | Run `--add-windows` to detect and add |
@@ -296,9 +307,9 @@ failed signing /boot/4a1b942b...: is a directory
 failed signing /boot/4a1b942b.../limine_history/...: does not exist
 ```
 
-These are from the conflicting sbctl hook. After running v1.3.0 setup, these errors disappear permanently.
+These are from the conflicting sbctl hook. After running v1.3.0+ setup, these errors disappear permanently.
 
-## 💡 Best Practices
+## Best Practices
 
 1. **New Installation**: Run `--setup` once, handles everything including conflicts
 2. **Upgrading from v1.2.x**: Just run `--setup`, it migrates automatically
@@ -308,7 +319,7 @@ These are from the conflicting sbctl hook. After running v1.3.0 setup, these err
 6. **Regular Checks**: Use `--status` to verify system health
 7. **Clean Removal**: Use `--uninstall` instead of manual deletion
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -323,8 +334,9 @@ These are from the conflicting sbctl hook. After running v1.3.0 setup, these err
 - Ensure automation continues after partial failures
 - Verify NoExtract configuration persists after sbctl updates
 - Test clean uninstall and reinstall
+- Verify pacman hook exit status
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 omarchy-secure-boot-manager/
@@ -333,25 +345,25 @@ omarchy-secure-boot-manager/
 └── LICENSE                   # MIT License
 ```
 
-## 🆘 Support
+## Support
 
 - **Issues**: [GitHub Issues](https://github.com/peregrinus879/omarchy-secure-boot-manager/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/peregrinus879/omarchy-secure-boot-manager/discussions)
 - **Wiki**: [Documentation Wiki](https://github.com/peregrinus879/omarchy-secure-boot-manager/wiki)
 
-## 📜 License
+## License
 
 MIT License - See [LICENSE](LICENSE) file for details
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- Omarchy Linux community for testing and feedback
+- Omarchy Linux community
 - Limine bootloader developers
 - sbctl project for secure boot management tools
 - Arch Linux team for the robust package management system
 
 ---
 
-**Secure boot should be simple, reliable, and error-free. Version 1.3.0 makes it so.**
+**Secure boot should be simple, reliable, and error-free. Version 1.3.1 makes it so.**
 
 *If this tool helped you, consider starring the repository!*
